@@ -43,6 +43,8 @@ export default function Vehicles() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const { data: vehicles, isLoading } = trpc.vehicles.list.useQuery();
+  const { data: drivers } = trpc.drivers.list.useQuery();
+  const activeDrivers = (drivers ?? []).filter(d => d.status === "active");
   const utils = trpc.useUtils();
   const createMutation = trpc.vehicles.create.useMutation({
     onSuccess: () => {
@@ -193,11 +195,18 @@ export default function Vehicles() {
               </div>
               <div>
                 <Label>Assigned Driver</Label>
-                <Input
-                  placeholder="Driver name"
-                  value={form.assignedDriver}
-                  onChange={(e) => setForm({ ...form, assignedDriver: e.target.value })}
-                />
+                <Select
+                  value={form.assignedDriver || undefined}
+                  onValueChange={(v) => setForm({ ...form, assignedDriver: v === "__none__" ? "" : v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="No driver assigned" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No driver assigned</SelectItem>
+                    {activeDrivers.map((d) => (
+                      <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <Button onClick={handleCreate} disabled={createMutation.isPending}>
                 {createMutation.isPending ? "Adding..." : "Add Vehicle"}

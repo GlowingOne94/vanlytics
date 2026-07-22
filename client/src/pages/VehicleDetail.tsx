@@ -49,6 +49,7 @@ export default function VehicleDetail() {
   const { data: repairs } = trpc.repairs.list.useQuery({ vehicleId });
   const { data: maintenanceRecords } = trpc.maintenance.getRecords.useQuery({ vehicleId });
   const { data: services } = trpc.maintenance.getServices.useQuery();
+  const { data: drivers } = trpc.drivers.list.useQuery();
   const utils = trpc.useUtils();
 
   const updateMutation = trpc.vehicles.update.useMutation({
@@ -245,7 +246,22 @@ export default function VehicleDetail() {
                   </div>
                   <div>
                     <Label>Assigned Driver</Label>
-                    <Input value={editForm.assignedDriver} onChange={(e) => setEditForm({ ...editForm, assignedDriver: e.target.value })} />
+                    <Select
+                      value={editForm.assignedDriver || undefined}
+                      onValueChange={(v) => setEditForm({ ...editForm, assignedDriver: v === "__none__" ? "" : v })}
+                    >
+                      <SelectTrigger><SelectValue placeholder="No driver assigned" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">No driver assigned</SelectItem>
+                        {(drivers ?? [])
+                          .filter(d => d.status === "active" || d.name === editForm.assignedDriver)
+                          .map((d) => (
+                            <SelectItem key={d.id} value={d.name}>
+                              {d.name}{d.status !== "active" ? " (inactive)" : ""}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label>Status</Label>
