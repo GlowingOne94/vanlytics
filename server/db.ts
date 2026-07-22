@@ -896,6 +896,42 @@ export async function generateAlerts(organizationId: number) {
     }
   }
 
+  // 1b. Insurance & registration expiring alerts
+  for (const vehicle of allVehicles) {
+    const checks: { field: "insuranceExpiry" | "registrationExpiry"; type: "insurance_expiring" | "registration_expiring"; label: string }[] = [
+      { field: "insuranceExpiry", type: "insurance_expiring", label: "Insurance" },
+      { field: "registrationExpiry", type: "registration_expiring", label: "Registration" },
+    ];
+
+    for (const check of checks) {
+      const expiry = vehicle[check.field];
+      if (!expiry || expiry > thirtyDaysFromNow) continue;
+
+      const existing = await db.select().from(alerts).where(and(
+        eq(alerts.organizationId, organizationId),
+        eq(alerts.vehicleId, vehicle.id),
+        eq(alerts.type, check.type),
+        eq(alerts.isDismissed, "no"),
+      )).limit(1);
+
+      if (existing.length === 0) {
+        const isExpired = expiry < now;
+        const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+        await db.insert(alerts).values({
+          organizationId,
+          vehicleId: vehicle.id,
+          type: check.type,
+          title: `${check.label} ${isExpired ? "expired" : "expiring soon"} - Van ${vehicle.vanNumber}`,
+          message: isExpired
+            ? `Van ${vehicle.vanNumber}'s ${check.label.toLowerCase()} expired on ${new Date(expiry).toLocaleDateString()}.`
+            : `Van ${vehicle.vanNumber}'s ${check.label.toLowerCase()} expires in ${daysLeft} days (${new Date(expiry).toLocaleDateString()}).`,
+          severity: isExpired ? "critical" : "warning",
+        });
+        generated++;
+      }
+    }
+  }
+
   // 2. Warranty expiring alerts
   const expiringRepairs = await db.select().from(repairs)
     .where(and(

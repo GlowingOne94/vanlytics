@@ -162,7 +162,9 @@ export const appRouter = router({
         assignedDriver: z.string().optional(),
         status: z.enum(["active", "down", "awaiting_parts", "at_shop", "retired"]).default("active"),
         healthScore: z.enum(["green", "yellow", "red"]).default("green"),
+        insuranceIssued: z.number().optional(),
         insuranceExpiry: z.number().optional(),
+        registrationIssued: z.number().optional(),
         registrationExpiry: z.number().optional(),
         notes: z.string().optional(),
       }))
@@ -186,11 +188,13 @@ export const appRouter = router({
         healthScore: z.enum(["green", "yellow", "red"]).optional(),
         photoUrl: z.string().nullable().optional(),
         photoKey: z.string().nullable().optional(),
+        insuranceIssued: z.number().nullable().optional(),
         insuranceExpiry: z.number().nullable().optional(),
+        registrationIssued: z.number().nullable().optional(),
         registrationExpiry: z.number().nullable().optional(),
         notes: z.string().nullable().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
         await db.updateVehicle(ctx.organizationId, id, data);
         return { success: true };

@@ -83,6 +83,10 @@ export default function VehicleDetail() {
         assignedDriver: vehicle.assignedDriver || "",
         status: vehicle.status,
         healthScore: vehicle.healthScore,
+        insuranceIssued: vehicle.insuranceIssued ? new Date(vehicle.insuranceIssued).toISOString().split("T")[0] : "",
+        insuranceExpiry: vehicle.insuranceExpiry ? new Date(vehicle.insuranceExpiry).toISOString().split("T")[0] : "",
+        registrationIssued: vehicle.registrationIssued ? new Date(vehicle.registrationIssued).toISOString().split("T")[0] : "",
+        registrationExpiry: vehicle.registrationExpiry ? new Date(vehicle.registrationExpiry).toISOString().split("T")[0] : "",
         notes: vehicle.notes || "",
       });
       setEditing(true);
@@ -95,6 +99,10 @@ export default function VehicleDetail() {
       ...editForm,
       mileage: parseInt(editForm.mileage) || 0,
       year: parseInt(editForm.year) || 2024,
+      insuranceIssued: editForm.insuranceIssued ? new Date(editForm.insuranceIssued).getTime() : undefined,
+      insuranceExpiry: editForm.insuranceExpiry ? new Date(editForm.insuranceExpiry).getTime() : undefined,
+      registrationIssued: editForm.registrationIssued ? new Date(editForm.registrationIssued).getTime() : undefined,
+      registrationExpiry: editForm.registrationExpiry ? new Date(editForm.registrationExpiry).getTime() : undefined,
     });
   };
 
@@ -257,6 +265,22 @@ export default function VehicleDetail() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div>
+                    <Label>Insurance Issued</Label>
+                    <Input type="date" value={editForm.insuranceIssued} onChange={(e) => setEditForm({ ...editForm, insuranceIssued: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Insurance Expires</Label>
+                    <Input type="date" value={editForm.insuranceExpiry} onChange={(e) => setEditForm({ ...editForm, insuranceExpiry: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Registration Issued</Label>
+                    <Input type="date" value={editForm.registrationIssued} onChange={(e) => setEditForm({ ...editForm, registrationIssued: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Registration Expires</Label>
+                    <Input type="date" value={editForm.registrationExpiry} onChange={(e) => setEditForm({ ...editForm, registrationExpiry: e.target.value })} />
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -269,6 +293,18 @@ export default function VehicleDetail() {
                   <InfoRow label="Transmission" value={vehicle.transmission || "—"} />
                   <InfoRow label="Assigned Driver" value={vehicle.assignedDriver || "—"} />
                   <InfoRow label="Status" value={vehicle.status.replace("_", " ")} />
+                  <InfoRow
+                    label="Insurance"
+                    value={vehicle.insuranceExpiry
+                      ? `${vehicle.insuranceIssued ? new Date(vehicle.insuranceIssued).toLocaleDateString() + " – " : ""}${new Date(vehicle.insuranceExpiry).toLocaleDateString()}`
+                      : "—"}
+                  />
+                  <InfoRow
+                    label="Registration"
+                    value={vehicle.registrationExpiry
+                      ? `${vehicle.registrationIssued ? new Date(vehicle.registrationIssued).toLocaleDateString() + " – " : ""}${new Date(vehicle.registrationExpiry).toLocaleDateString()}`
+                      : "—"}
+                  />
                 </div>
               )}
             </CardContent>
