@@ -462,6 +462,28 @@ export const appRouter = router({
         await db.deleteDotInspection(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
+    update: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        inspectionDate: z.number().optional(),
+        mileageAtInspection: z.number().nullable().optional(),
+        inspector: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, inspectionDate, ...rest } = input;
+        const data: Record<string, unknown> = { ...rest };
+
+        if (inspectionDate !== undefined) {
+          data.inspectionDate = inspectionDate;
+          const expiryDate = new Date(inspectionDate);
+          expiryDate.setMonth(expiryDate.getMonth() + 6);
+          data.expiryDate = expiryDate.getTime();
+        }
+
+        await db.updateDotInspection(ctx.organizationId, id, data);
+        return { success: true } as const;
+      }),
   }),
 
   // ============ ALERTS ============

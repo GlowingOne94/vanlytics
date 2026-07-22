@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ClipboardCheck, Plus } from "lucide-react";
+import { ClipboardCheck, Plus, Pencil } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +33,7 @@ export default function DotInspections() {
   const utils = trpc.useUtils();
 
   const [dialogTarget, setDialogTarget] = useState<{ vehicleId: number; vanNumber: string } | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ inspectionDate: Date.now(), mileageAtInspection: 0, inspector: "", notes: "" });
 
   const createMutation = trpc.dotInspections.create.useMutation({
@@ -40,6 +41,15 @@ export default function DotInspections() {
       utils.dotInspections.latestByVehicle.invalidate();
       setDialogTarget(null);
       toast.success("Inspection logged");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updateMutation = trpc.dotInspections.update.useMutation({
+    onSuccess: () => {
+      utils.dotInspections.latestByVehicle.invalidate();
+      setDialogTarget(null);
+      toast.success("Inspection updated");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -77,19 +87,41 @@ export default function DotInspections() {
   });
 
   const openDialog = (vehicleId: number, vanNumber: string, currentMileage: number) => {
+    setEditingId(null);
     setDialogTarget({ vehicleId, vanNumber });
     setForm({ inspectionDate: Date.now(), mileageAtInspection: currentMileage, inspector: "", notes: "" });
   };
 
+  const openEditDialog = (vehicleId: number, vanNumber: string, latest: NonNullable<typeof latestByVehicle>[number]) => {
+    setEditingId(latest.id);
+    setDialogTarget({ vehicleId, vanNumber });
+    setForm({
+      inspectionDate: latest.inspectionDate,
+      mileageAtInspection: latest.mileageAtInspection ?? 0,
+      inspector: latest.inspector ?? "",
+      notes: latest.notes ?? "",
+    });
+  };
+
   const handleSave = () => {
     if (!dialogTarget) return;
-    createMutation.mutate({
-      vehicleId: dialogTarget.vehicleId,
-      inspectionDate: form.inspectionDate,
-      mileageAtInspection: form.mileageAtInspection || undefined,
-      inspector: form.inspector || undefined,
-      notes: form.notes || undefined,
-    });
+    if (editingId) {
+      updateMutation.mutate({
+        id: editingId,
+        inspectionDate: form.inspectionDate,
+        mileageAtInspection: form.mileageAtInspection || undefined,
+        inspector: form.inspector || undefined,
+        notes: form.notes || undefined,
+      });
+    } else {
+      createMutation.mutate({
+        vehicleId: dialogTarget.vehicleId,
+        inspectionDate: form.inspectionDate,
+        mileageAtInspection: form.mileageAtInspection || undefined,
+        inspector: form.inspector || undefined,
+        notes: form.notes || undefined,
+      });
+    }
   };
 
   return (
@@ -125,6 +157,11 @@ export default function DotInspections() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className={STATUS_STYLES[status].className}>{STATUS_STYLES[status].label}</Badge>
+                {latest && (
+                  <Button size="sm" variant="ghost" onClick={() => openEditDialog(vehicle.id, vehicle.vanNumber, latest)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={() => openDialog(vehicle.id, vehicle.vanNumber, vehicle.mileage)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> Log Inspection
                 </Button>
@@ -134,10 +171,12 @@ export default function DotInspections() {
         ))}
       </div>
 
-      <Dialog open={Boolean(dialogTarget)} onOpenChange={(open) => { if (!open) setDialogTarget(null); }}>
+      <Dialog open={Boolean(dialogTarget)} onOpenChange={(open) => { if (!open) { setDialogTarget(null); setEditingId(null); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{dialogTarget ? `Log DOT Inspection — Van ${dialogTarget.vanNumber}` : ""}</DialogTitle>
+            <DialogTitle>
+              {dialogTarget ? `${editingId ? "Edit" : "Log"} DOT Inspection — Van ${dialogTarget.vanNumber}` : ""}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
@@ -169,8 +208,10 @@ export default function DotInspections() {
               <Label>Notes — optional</Label>
               <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
-            <Button onClick={handleSave} disabled={createMutation.isPending}>
-              {createMutation.isPending ? "Saving..." : "Log Inspection"}
+            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending
+                ? "Saving..."
+                : editingId ? "Save Changes" : "Log Inspection"}
             </Button>
           </div>
         </DialogContent>

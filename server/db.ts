@@ -421,6 +421,12 @@ export async function deleteDotInspection(organizationId: number, id: number) {
   await db.delete(dotInspections).where(and(eq(dotInspections.id, id), eq(dotInspections.organizationId, organizationId)));
 }
 
+export async function updateDotInspection(organizationId: number, id: number, data: Partial<InsertDotInspection>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(dotInspections).set(data).where(and(eq(dotInspections.id, id), eq(dotInspections.organizationId, organizationId)));
+}
+
 // The most recent inspection per vehicle — what "current DOT status" means.
 export async function getLatestDotInspectionByVehicle(organizationId: number) {
   const all = await getDotInspections(organizationId);
