@@ -16,6 +16,7 @@ import {
   dotInspections, DotInspection, InsertDotInspection,
   drivers, Driver, InsertDriver,
   driverMedicalCerts, DriverMedicalCert, InsertDriverMedicalCert,
+  driverAbstracts, DriverAbstract, InsertDriverAbstract,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -511,6 +512,48 @@ export async function getLatestDotInspectionByVehicle(organizationId: number) {
   return Object.fromEntries(latest);
 }
 
+// ============ DRIVER ABSTRACT HELPERS ============
+
+export async function getDriverAbstracts(organizationId: number, driverId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(driverAbstracts.organizationId, organizationId)];
+  if (driverId) conditions.push(eq(driverAbstracts.driverId, driverId));
+  return db.select().from(driverAbstracts).where(and(...conditions)).orderBy(desc(driverAbstracts.pulledDate));
+}
+
+export async function createDriverAbstract(organizationId: number, data: Omit<InsertDriverAbstract, "organizationId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(driverAbstracts).values({ ...data, organizationId });
+  return { id: result[0].insertId };
+}
+
+export async function updateDriverAbstract(organizationId: number, id: number, data: Partial<InsertDriverAbstract>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(driverAbstracts).set(data).where(and(eq(driverAbstracts.id, id), eq(driverAbstracts.organizationId, organizationId)));
+}
+
+export async function deleteDriverAbstract(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(driverAbstracts).where(and(eq(driverAbstracts.id, id), eq(driverAbstracts.organizationId, organizationId)));
+}
+
+// The most recent abstract pull per driver — what "current abstract status" means.
+export async function getLatestAbstractByDriver(organizationId: number) {
+  const all = await getDriverAbstracts(organizationId);
+  const latest = new Map<number, DriverAbstract>();
+  for (const r of all) {
+    const existing = latest.get(r.driverId);
+    if (!existing || r.pulledDate > existing.pulledDate) {
+      latest.set(r.driverId, r);
+    }
+  }
+  return Object.fromEntries(latest);
+}
+
 // ============ ALERT HELPERS ============
 
 export async function getAlerts(organizationId: number, opts?: { unreadOnly?: boolean; vehicleId?: number }) {
@@ -985,6 +1028,66 @@ export async function generateAlerts(organizationId: number) {
           ? `${driver.name}'s DOT medical certificate expired on ${new Date(cert.expiryDate).toLocaleDateString()}.`
           : `${driver.name}'s DOT medical certificate expires in ${daysLeft} days (${new Date(cert.expiryDate).toLocaleDateString()}).`,
         severity: isExpired ? "critical" : "warning",
+      });
+      generated++;
+    }
+  }
+
+  // 6. CDL expiring alerts
+  for (const driver of allDrivers) {
+    if (driver.status !== "active" || !driver.cdlExpiry) continue;
+    if (driver.cdlExpiry > thirtyDaysFromNow) continue;
+
+    const existing = await db.select().from(alerts).where(and(
+      eq(alerts.organizationId, organizationId),
+      eq(alerts.type, "cdl_expiring"),
+      eq(alerts.isDismissed, "no"),
+      like(alerts.title, `%${driver.name}%`),
+    )).limit(1);
+
+    if (existing.length === 0) {
+      const isExpired = driver.cdlExpiry < now;
+      const daysLeft = Math.ceil((driver.cdlExpiry - now) / (1000 * 60 * 60 * 24));
+      await db.insert(alerts).values({
+        organizationId,
+        vehicleId: null,
+        type: "cdl_expiring",
+        title: `CDL ${isExpired ? "expired" : "expiring soon"} - ${driver.name}`,
+        message: isExpired
+          ? `${driver.name}'s CDL expired on ${new Date(driver.cdlExpiry).toLocaleDateString()}.`
+          : `${driver.name}'s CDL expires in ${daysLeft} days (${new Date(driver.cdlExpiry).toLocaleDateString()}).`,
+        severity: isExpired ? "critical" : "warning",
+      });
+      generated++;
+    }
+  }
+
+  // 7. Driver abstract (MVR) due alerts
+  const latestAbstract = await getLatestAbstractByDriver(organizationId);
+  for (const driver of allDrivers) {
+    if (driver.status !== "active") continue;
+    const abstract = latestAbstract[driver.id];
+    if (!abstract || abstract.nextDueDate > thirtyDaysFromNow) continue;
+
+    const existing = await db.select().from(alerts).where(and(
+      eq(alerts.organizationId, organizationId),
+      eq(alerts.type, "abstract_due"),
+      eq(alerts.isDismissed, "no"),
+      like(alerts.title, `%${driver.name}%`),
+    )).limit(1);
+
+    if (existing.length === 0) {
+      const isOverdue = abstract.nextDueDate < now;
+      const daysLeft = Math.ceil((abstract.nextDueDate - now) / (1000 * 60 * 60 * 24));
+      await db.insert(alerts).values({
+        organizationId,
+        vehicleId: null,
+        type: "abstract_due",
+        title: `Driver abstract ${isOverdue ? "overdue" : "due soon"} - ${driver.name}`,
+        message: isOverdue
+          ? `${driver.name}'s driving record (MVR) review was due on ${new Date(abstract.nextDueDate).toLocaleDateString()}.`
+          : `${driver.name}'s driving record (MVR) review is due in ${daysLeft} days (${new Date(abstract.nextDueDate).toLocaleDateString()}).`,
+        severity: isOverdue ? "critical" : "warning",
       });
       generated++;
     }

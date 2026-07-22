@@ -18,17 +18,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCircle, Plus, Pencil, Trash2, HeartPulse } from "lucide-react";
+import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 type Status = "valid" | "expiring_soon" | "expired" | "never";
 
 const STATUS_STYLES: Record<Status, { label: string; className: string }> = {
-  valid: { label: "Valid", className: "bg-green-500/15 text-green-500 border-green-500/30" },
-  expiring_soon: { label: "Expiring Soon", className: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
+  valid: { label: "OK", className: "bg-green-500/15 text-green-500 border-green-500/30" },
+  expiring_soon: { label: "Due Soon", className: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
   expired: { label: "Expired", className: "bg-red-500/15 text-red-500 border-red-500/30" },
-  never: { label: "No Medical on File", className: "bg-muted text-muted-foreground border-border" },
+  never: { label: "None on File", className: "bg-muted text-muted-foreground border-border" },
 };
 
 const EXPIRING_SOON_DAYS = 30;
@@ -40,15 +40,26 @@ function addYears(ms: number, years: number) {
   return d.getTime();
 }
 
+function statusFor(expiryMs: number | null | undefined, now: number): { status: Status; daysRemaining: number | null } {
+  if (!expiryMs) return { status: "never", daysRemaining: null };
+  const daysRemaining = Math.floor((expiryMs - now) / DAY_MS);
+  if (daysRemaining <= 0) return { status: "expired", daysRemaining };
+  if (daysRemaining <= EXPIRING_SOON_DAYS) return { status: "expiring_soon", daysRemaining };
+  return { status: "valid", daysRemaining };
+}
+
 export default function DriverAbstracts() {
   const { data: drivers, isLoading: loadingDrivers } = trpc.drivers.list.useQuery();
-  const { data: latestByDriver, isLoading: loadingLatest } = trpc.driverMedicalCerts.latestByDriver.useQuery();
+  const { data: latestMedical, isLoading: loadingMedical } = trpc.driverMedicalCerts.latestByDriver.useQuery();
+  const { data: latestAbstract, isLoading: loadingAbstract } = trpc.driverAbstracts.latestByDriver.useQuery();
   const utils = trpc.useUtils();
 
   // Driver create/edit dialog
   const [driverDialogOpen, setDriverDialogOpen] = useState(false);
   const [editingDriverId, setEditingDriverId] = useState<number | null>(null);
-  const [driverForm, setDriverForm] = useState({ name: "", licenseNumber: "", phone: "", notes: "" });
+  const [driverForm, setDriverForm] = useState({
+    name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", notes: "",
+  });
 
   const createDriverMutation = trpc.drivers.create.useMutation({
     onSuccess: () => { utils.drivers.list.invalidate(); setDriverDialogOpen(false); toast.success("Driver added"); },
@@ -63,7 +74,7 @@ export default function DriverAbstracts() {
     onError: (err) => toast.error(err.message),
   });
 
-  // Medical cert log/edit dialog
+  // Medical cert dialog
   const [medicalTarget, setMedicalTarget] = useState<{ driverId: number; driverName: string } | null>(null);
   const [editingCertId, setEditingCertId] = useState<number | null>(null);
   const [medForm, setMedForm] = useState({ examDate: Date.now(), expiryDate: addYears(Date.now(), 2), renewalYears: "2" as "1" | "2", examiner: "", notes: "" });
@@ -77,14 +88,28 @@ export default function DriverAbstracts() {
     onError: (err) => toast.error(err.message),
   });
 
-  const loading = loadingDrivers || loadingLatest;
+  // Abstract (MVR) dialog
+  const [abstractTarget, setAbstractTarget] = useState<{ driverId: number; driverName: string } | null>(null);
+  const [editingAbstractId, setEditingAbstractId] = useState<number | null>(null);
+  const [abstractForm, setAbstractForm] = useState({ pulledDate: Date.now(), nextDueDate: addYears(Date.now(), 1), notes: "" });
+
+  const createAbstractMutation = trpc.driverAbstracts.create.useMutation({
+    onSuccess: () => { utils.driverAbstracts.latestByDriver.invalidate(); setAbstractTarget(null); toast.success("Abstract logged"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const updateAbstractMutation = trpc.driverAbstracts.update.useMutation({
+    onSuccess: () => { utils.driverAbstracts.latestByDriver.invalidate(); setAbstractTarget(null); toast.success("Abstract updated"); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const loading = loadingDrivers || loadingMedical || loadingAbstract;
 
   if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
         <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
         </div>
       </div>
     );
@@ -92,38 +117,53 @@ export default function DriverAbstracts() {
 
   const now = Date.now();
   const rows = (drivers ?? []).map(d => {
-    const latest = latestByDriver?.[d.id] ?? null;
-    let status: Status = "never";
-    let daysRemaining: number | null = null;
-    if (latest) {
-      daysRemaining = Math.floor((latest.expiryDate - now) / DAY_MS);
-      if (daysRemaining <= 0) status = "expired";
-      else if (daysRemaining <= EXPIRING_SOON_DAYS) status = "expiring_soon";
-      else status = "valid";
-    }
-    return { driver: d, latest, status, daysRemaining };
+    const medical = latestMedical?.[d.id] ?? null;
+    const abstract = latestAbstract?.[d.id] ?? null;
+    return {
+      driver: d,
+      medical,
+      medicalStatus: statusFor(medical?.expiryDate, now),
+      cdlStatus: statusFor(d.cdlExpiry, now),
+      abstract,
+      abstractStatus: statusFor(abstract?.nextDueDate, now),
+    };
   }).sort((a, b) => {
-    const order: Record<Status, number> = { expired: 0, expiring_soon: 1, never: 2, valid: 3 };
-    return order[a.status] - order[b.status];
+    const worst = (r: typeof a) => {
+      const order: Record<Status, number> = { expired: 0, expiring_soon: 1, never: 2, valid: 3 };
+      return Math.min(order[r.medicalStatus.status], order[r.cdlStatus.status], order[r.abstractStatus.status]);
+    };
+    return worst(a) - worst(b);
   });
 
   // Driver dialog handlers
   const openAddDriver = () => {
     setEditingDriverId(null);
-    setDriverForm({ name: "", licenseNumber: "", phone: "", notes: "" });
+    setDriverForm({ name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", notes: "" });
     setDriverDialogOpen(true);
   };
   const openEditDriver = (d: NonNullable<typeof drivers>[number]) => {
     setEditingDriverId(d.id);
-    setDriverForm({ name: d.name, licenseNumber: d.licenseNumber ?? "", phone: d.phone ?? "", notes: d.notes ?? "" });
+    setDriverForm({
+      name: d.name,
+      licenseNumber: d.licenseNumber ?? "",
+      phone: d.phone ?? "",
+      ssnLast4: d.ssnLast4 ?? "",
+      dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth).toISOString().split("T")[0] : "",
+      cdlExpiry: d.cdlExpiry ? new Date(d.cdlExpiry).toISOString().split("T")[0] : "",
+      notes: d.notes ?? "",
+    });
     setDriverDialogOpen(true);
   };
   const handleSaveDriver = () => {
     if (!driverForm.name.trim()) { toast.error("Enter a driver name"); return; }
+    if (driverForm.ssnLast4 && !/^\d{0,4}$/.test(driverForm.ssnLast4)) { toast.error("SSN last 4 must be digits only"); return; }
     const payload = {
       name: driverForm.name.trim(),
       licenseNumber: driverForm.licenseNumber || undefined,
       phone: driverForm.phone || undefined,
+      ssnLast4: driverForm.ssnLast4 || undefined,
+      dateOfBirth: driverForm.dateOfBirth ? new Date(driverForm.dateOfBirth).getTime() : undefined,
+      cdlExpiry: driverForm.cdlExpiry ? new Date(driverForm.cdlExpiry).getTime() : undefined,
       notes: driverForm.notes || undefined,
     };
     if (editingDriverId) {
@@ -133,7 +173,7 @@ export default function DriverAbstracts() {
     }
   };
   const handleDeleteDriver = (id: number, name: string) => {
-    if (!window.confirm(`Remove ${name}? This won't delete their medical history, just the driver record.`)) return;
+    if (!window.confirm(`Remove ${name}? This won't delete their medical/abstract history, just the driver record.`)) return;
     deleteDriverMutation.mutate({ id });
   };
 
@@ -143,15 +183,12 @@ export default function DriverAbstracts() {
     setMedicalTarget({ driverId, driverName });
     setMedForm({ examDate: Date.now(), expiryDate: addYears(Date.now(), 2), renewalYears: "2", examiner: "", notes: "" });
   };
-  const openEditMedical = (driverId: number, driverName: string, cert: NonNullable<typeof latestByDriver>[number]) => {
+  const openEditMedical = (driverId: number, driverName: string, cert: NonNullable<typeof latestMedical>[number]) => {
     setEditingCertId(cert.id);
     setMedicalTarget({ driverId, driverName });
     setMedForm({
-      examDate: cert.examDate,
-      expiryDate: cert.expiryDate,
-      renewalYears: cert.renewalYears as "1" | "2",
-      examiner: cert.examiner ?? "",
-      notes: cert.notes ?? "",
+      examDate: cert.examDate, expiryDate: cert.expiryDate,
+      renewalYears: cert.renewalYears as "1" | "2", examiner: cert.examiner ?? "", notes: cert.notes ?? "",
     });
   };
   const handleExamDateOrIntervalChange = (examDate: number, renewalYears: "1" | "2") => {
@@ -160,11 +197,8 @@ export default function DriverAbstracts() {
   const handleSaveMedical = () => {
     if (!medicalTarget) return;
     const payload = {
-      examDate: medForm.examDate,
-      expiryDate: medForm.expiryDate,
-      renewalYears: medForm.renewalYears,
-      examiner: medForm.examiner || undefined,
-      notes: medForm.notes || undefined,
+      examDate: medForm.examDate, expiryDate: medForm.expiryDate, renewalYears: medForm.renewalYears,
+      examiner: medForm.examiner || undefined, notes: medForm.notes || undefined,
     };
     if (editingCertId) {
       updateCertMutation.mutate({ id: editingCertId, ...payload });
@@ -173,12 +207,36 @@ export default function DriverAbstracts() {
     }
   };
 
+  // Abstract dialog handlers
+  const openLogAbstract = (driverId: number, driverName: string) => {
+    setEditingAbstractId(null);
+    setAbstractTarget({ driverId, driverName });
+    setAbstractForm({ pulledDate: Date.now(), nextDueDate: addYears(Date.now(), 1), notes: "" });
+  };
+  const openEditAbstract = (driverId: number, driverName: string, abstract: NonNullable<typeof latestAbstract>[number]) => {
+    setEditingAbstractId(abstract.id);
+    setAbstractTarget({ driverId, driverName });
+    setAbstractForm({ pulledDate: abstract.pulledDate, nextDueDate: abstract.nextDueDate, notes: abstract.notes ?? "" });
+  };
+  const handlePulledDateChange = (pulledDate: number) => {
+    setAbstractForm({ ...abstractForm, pulledDate, nextDueDate: addYears(pulledDate, 1) });
+  };
+  const handleSaveAbstract = () => {
+    if (!abstractTarget) return;
+    const payload = { pulledDate: abstractForm.pulledDate, nextDueDate: abstractForm.nextDueDate, notes: abstractForm.notes || undefined };
+    if (editingAbstractId) {
+      updateAbstractMutation.mutate({ id: editingAbstractId, ...payload });
+    } else {
+      createAbstractMutation.mutate({ driverId: abstractTarget.driverId, ...payload });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Driver Abstracts</h1>
-          <p className="text-muted-foreground text-sm mt-1">Driver records and DOT medical certification status</p>
+          <p className="text-muted-foreground text-sm mt-1">Driver records, CDL status, medical certs, and MVR reviews</p>
         </div>
         <Button size="sm" onClick={openAddDriver}>
           <Plus className="h-4 w-4 mr-1" /> Add Driver
@@ -188,53 +246,91 @@ export default function DriverAbstracts() {
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">No drivers added yet.</p>
       ) : (
-        <div className="space-y-2">
-          {rows.map(({ driver, latest, status, daysRemaining }) => (
+        <div className="space-y-3">
+          {rows.map(({ driver, medical, medicalStatus, cdlStatus, abstract, abstractStatus }) => (
             <Card key={driver.id}>
-              <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <UserCircle className="h-5 w-5 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      {driver.name}
-                      {driver.status === "inactive" && <Badge variant="outline" className="ml-2 text-xs">Inactive</Badge>}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {driver.licenseNumber && `Lic# ${driver.licenseNumber} · `}
-                      {driver.phone && `${driver.phone} · `}
-                      {latest ? (
-                        <>
-                          Medical exam {new Date(latest.examDate).toLocaleDateString()} ({latest.renewalYears}yr)
-                          {" · "}
-                          {daysRemaining! <= 0
-                            ? `Expired ${new Date(latest.expiryDate).toLocaleDateString()}`
-                            : `Expires ${new Date(latest.expiryDate).toLocaleDateString()} (${daysRemaining}d)`}
-                        </>
-                      ) : (
-                        "No medical certificate on file"
-                      )}
-                    </p>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <UserCircle className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium">
+                        {driver.name}
+                        {driver.status === "inactive" && <Badge variant="outline" className="ml-2 text-xs">Inactive</Badge>}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {driver.licenseNumber && `Lic# ${driver.licenseNumber}`}
+                        {driver.phone && ` · ${driver.phone}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDriver(driver)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleDeleteDriver(driver.id, driver.name)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="outline" className={STATUS_STYLES[status].className}>{STATUS_STYLES[status].label}</Badge>
-                  {latest && (
-                    <Button size="sm" variant="ghost" onClick={() => openEditMedical(driver.id, driver.name, latest)}>
-                      <HeartPulse className="h-3.5 w-3.5 mr-1" /> Edit Medical
-                    </Button>
-                  )}
-                  <Button size="sm" variant="outline" onClick={() => openLogMedical(driver.id, driver.name)}>
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Log Medical
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDriver(driver)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => handleDeleteDriver(driver.id, driver.name)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t">
+                  {/* CDL status */}
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <IdCard className="h-3.5 w-3.5" /> CDL
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className={`text-xs ${STATUS_STYLES[cdlStatus.status].className}`}>
+                        {driver.cdlExpiry ? new Date(driver.cdlExpiry).toLocaleDateString() : STATUS_STYLES[cdlStatus.status].label}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Medical status */}
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <HeartPulse className="h-3.5 w-3.5" /> Medical
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className={`text-xs ${STATUS_STYLES[medicalStatus.status].className}`}>
+                        {medical ? new Date(medical.expiryDate).toLocaleDateString() : STATUS_STYLES[medicalStatus.status].label}
+                      </Badge>
+                      {medical ? (
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEditMedical(driver.id, driver.name, medical)}>
+                          Edit
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => openLogMedical(driver.id, driver.name)}>
+                          Log
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Abstract status */}
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <FileSearch className="h-3.5 w-3.5" /> Abstract
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className={`text-xs ${STATUS_STYLES[abstractStatus.status].className}`}>
+                        {abstract ? new Date(abstract.nextDueDate).toLocaleDateString() : STATUS_STYLES[abstractStatus.status].label}
+                      </Badge>
+                      {abstract ? (
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEditAbstract(driver.id, driver.name, abstract)}>
+                          Edit
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => openLogAbstract(driver.id, driver.name)}>
+                          Log
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -244,7 +340,7 @@ export default function DriverAbstracts() {
 
       {/* Driver info dialog */}
       <Dialog open={driverDialogOpen} onOpenChange={setDriverDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingDriverId ? "Edit Driver" : "Add Driver"}</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
             <div>
@@ -261,6 +357,25 @@ export default function DriverAbstracts() {
                 <Input value={driverForm.phone} onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Date of Birth</Label>
+                <Input type="date" value={driverForm.dateOfBirth} onChange={(e) => setDriverForm({ ...driverForm, dateOfBirth: e.target.value })} />
+              </div>
+              <div>
+                <Label>SSN (last 4)</Label>
+                <Input
+                  value={driverForm.ssnLast4}
+                  maxLength={4}
+                  placeholder="1234"
+                  onChange={(e) => setDriverForm({ ...driverForm, ssnLast4: e.target.value.replace(/\D/g, "") })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>CDL Expiration Date</Label>
+              <Input type="date" value={driverForm.cdlExpiry} onChange={(e) => setDriverForm({ ...driverForm, cdlExpiry: e.target.value })} />
+            </div>
             <div>
               <Label>Notes</Label>
               <Input value={driverForm.notes} onChange={(e) => setDriverForm({ ...driverForm, notes: e.target.value })} />
@@ -276,9 +391,7 @@ export default function DriverAbstracts() {
       <Dialog open={Boolean(medicalTarget)} onOpenChange={(open) => { if (!open) { setMedicalTarget(null); setEditingCertId(null); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {medicalTarget ? `${editingCertId ? "Edit" : "Log"} Medical Cert — ${medicalTarget.driverName}` : ""}
-            </DialogTitle>
+            <DialogTitle>{medicalTarget ? `${editingCertId ? "Edit" : "Log"} Medical Cert — ${medicalTarget.driverName}` : ""}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
@@ -308,9 +421,7 @@ export default function DriverAbstracts() {
                 value={new Date(medForm.expiryDate).toISOString().split("T")[0]}
                 onChange={(e) => setMedForm({ ...medForm, expiryDate: new Date(e.target.value).getTime() })}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Suggested based on exam date + renewal period — adjust if your examiner set a different date.
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Suggested from exam date + renewal period — adjust if needed.</p>
             </div>
             <div>
               <Label>Examiner — optional</Label>
@@ -321,9 +432,48 @@ export default function DriverAbstracts() {
               <Input value={medForm.notes} onChange={(e) => setMedForm({ ...medForm, notes: e.target.value })} />
             </div>
             <Button onClick={handleSaveMedical} disabled={createCertMutation.isPending || updateCertMutation.isPending}>
-              {createCertMutation.isPending || updateCertMutation.isPending
+              {createCertMutation.isPending || updateCertMutation.isPending ? "Saving..." : editingCertId ? "Save Changes" : "Log Medical Cert"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Abstract (MVR) dialog */}
+      <Dialog open={Boolean(abstractTarget)} onOpenChange={(open) => { if (!open) { setAbstractTarget(null); setEditingAbstractId(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{abstractTarget ? `${editingAbstractId ? "Edit" : "Log"} Abstract (MVR) — ${abstractTarget.driverName}` : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div>
+              <Label>Date pulled</Label>
+              <Input
+                type="date"
+                value={new Date(abstractForm.pulledDate).toISOString().split("T")[0]}
+                onChange={(e) => handlePulledDateChange(new Date(e.target.value).getTime())}
+              />
+            </div>
+            <div>
+              <Label>Next review due</Label>
+              <Input
+                type="date"
+                value={new Date(abstractForm.nextDueDate).toISOString().split("T")[0]}
+                onChange={(e) => setAbstractForm({ ...abstractForm, nextDueDate: new Date(e.target.value).getTime() })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">Suggested one year out — adjust if needed.</p>
+            </div>
+            <div>
+              <Label>Notes — optional</Label>
+              <Input
+                value={abstractForm.notes}
+                placeholder="e.g. clean record, violations noted, points"
+                onChange={(e) => setAbstractForm({ ...abstractForm, notes: e.target.value })}
+              />
+            </div>
+            <Button onClick={handleSaveAbstract} disabled={createAbstractMutation.isPending || updateAbstractMutation.isPending}>
+              {createAbstractMutation.isPending || updateAbstractMutation.isPending
                 ? "Saving..."
-                : editingCertId ? "Save Changes" : "Log Medical Cert"}
+                : editingAbstractId ? "Save Changes" : "Log Abstract"}
             </Button>
           </div>
         </DialogContent>

@@ -242,6 +242,8 @@ export const alerts = mysqlTable("alerts", {
     "overpriced_repair",
     "dot_inspection_expiring",
     "medical_cert_expiring",
+    "cdl_expiring",
+    "abstract_due",
   ]).notNull(),
   title: varchar("title", { length: 200 }).notNull(),
   message: text("message"),
@@ -285,6 +287,9 @@ export const drivers = mysqlTable("drivers", {
   licenseNumber: varchar("licenseNumber", { length: 50 }),
   phone: varchar("phone", { length: 30 }),
   status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  ssnLast4: varchar("ssnLast4", { length: 4 }),
+  dateOfBirth: bigint("dateOfBirth", { mode: "number" }),
+  cdlExpiry: bigint("cdlExpiry", { mode: "number" }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -313,3 +318,21 @@ export const driverMedicalCerts = mysqlTable("driver_medical_certs", {
 
 export type DriverMedicalCert = typeof driverMedicalCerts.$inferSelect;
 export type InsertDriverMedicalCert = typeof driverMedicalCerts.$inferInsert;
+
+/**
+ * Driver Abstracts - motor vehicle record (MVR) pulls/reviews, generally
+ * required annually for CDL drivers. nextDueDate defaults to one year after
+ * the pull date but stays fully editable.
+ */
+export const driverAbstracts = mysqlTable("driver_abstracts", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull(),
+  pulledDate: bigint("pulledDate", { mode: "number" }).notNull(),
+  nextDueDate: bigint("nextDueDate", { mode: "number" }).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DriverAbstract = typeof driverAbstracts.$inferSelect;
+export type InsertDriverAbstract = typeof driverAbstracts.$inferInsert;

@@ -497,6 +497,9 @@ export const appRouter = router({
         licenseNumber: z.string().optional(),
         phone: z.string().optional(),
         status: z.enum(["active", "inactive"]).default("active"),
+        ssnLast4: z.string().max(4).optional(),
+        dateOfBirth: z.number().optional(),
+        cdlExpiry: z.number().optional(),
         notes: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -509,6 +512,9 @@ export const appRouter = router({
         licenseNumber: z.string().nullable().optional(),
         phone: z.string().nullable().optional(),
         status: z.enum(["active", "inactive"]).optional(),
+        ssnLast4: z.string().max(4).nullable().optional(),
+        dateOfBirth: z.number().nullable().optional(),
+        cdlExpiry: z.number().nullable().optional(),
         notes: z.string().nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -564,6 +570,46 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriverMedicalCert(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+  }),
+
+  // ============ DRIVER ABSTRACTS (MVR reviews) ============
+  driverAbstracts: router({
+    list: orgProcedure
+      .input(z.object({ driverId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        return db.getDriverAbstracts(ctx.organizationId, input?.driverId);
+      }),
+    latestByDriver: orgProcedure.query(async ({ ctx }) => {
+      return db.getLatestAbstractByDriver(ctx.organizationId);
+    }),
+    create: orgProcedure
+      .input(z.object({
+        driverId: z.number(),
+        pulledDate: z.number(),
+        nextDueDate: z.number(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createDriverAbstract(ctx.organizationId, input);
+      }),
+    update: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        pulledDate: z.number().optional(),
+        nextDueDate: z.number().optional(),
+        notes: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateDriverAbstract(ctx.organizationId, id, data);
+        return { success: true } as const;
+      }),
+    delete: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteDriverAbstract(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
   }),
