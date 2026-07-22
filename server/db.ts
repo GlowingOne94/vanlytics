@@ -14,6 +14,8 @@ import {
   maintenanceServices, MaintenanceService, InsertMaintenanceService,
   maintenanceRecords, MaintenanceRecord, InsertMaintenanceRecord,
   dotInspections, DotInspection, InsertDotInspection,
+  drivers, Driver, InsertDriver,
+  driverMedicalCerts, DriverMedicalCert, InsertDriverMedicalCert,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -425,6 +427,75 @@ export async function updateDotInspection(organizationId: number, id: number, da
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(dotInspections).set(data).where(and(eq(dotInspections.id, id), eq(dotInspections.organizationId, organizationId)));
+}
+
+// ============ DRIVER HELPERS ============
+
+export async function getDrivers(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(drivers).where(eq(drivers.organizationId, organizationId)).orderBy(drivers.name);
+}
+
+export async function createDriver(organizationId: number, data: Omit<InsertDriver, "organizationId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(drivers).values({ ...data, organizationId });
+  return { id: result[0].insertId };
+}
+
+export async function updateDriver(organizationId: number, id: number, data: Partial<InsertDriver>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(drivers).set(data).where(and(eq(drivers.id, id), eq(drivers.organizationId, organizationId)));
+}
+
+export async function deleteDriver(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(drivers).where(and(eq(drivers.id, id), eq(drivers.organizationId, organizationId)));
+}
+
+// ============ DRIVER MEDICAL CERT HELPERS ============
+
+export async function getDriverMedicalCerts(organizationId: number, driverId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(driverMedicalCerts.organizationId, organizationId)];
+  if (driverId) conditions.push(eq(driverMedicalCerts.driverId, driverId));
+  return db.select().from(driverMedicalCerts).where(and(...conditions)).orderBy(desc(driverMedicalCerts.examDate));
+}
+
+export async function createDriverMedicalCert(organizationId: number, data: Omit<InsertDriverMedicalCert, "organizationId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(driverMedicalCerts).values({ ...data, organizationId });
+  return { id: result[0].insertId };
+}
+
+export async function updateDriverMedicalCert(organizationId: number, id: number, data: Partial<InsertDriverMedicalCert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(driverMedicalCerts).set(data).where(and(eq(driverMedicalCerts.id, id), eq(driverMedicalCerts.organizationId, organizationId)));
+}
+
+export async function deleteDriverMedicalCert(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(driverMedicalCerts).where(and(eq(driverMedicalCerts.id, id), eq(driverMedicalCerts.organizationId, organizationId)));
+}
+
+// The most recent medical cert per driver — what "current medical status" means.
+export async function getLatestMedicalCertByDriver(organizationId: number) {
+  const all = await getDriverMedicalCerts(organizationId);
+  const latest = new Map<number, DriverMedicalCert>();
+  for (const r of all) {
+    const existing = latest.get(r.driverId);
+    if (!existing || r.examDate > existing.examDate) {
+      latest.set(r.driverId, r);
+    }
+  }
+  return Object.fromEntries(latest);
 }
 
 // The most recent inspection per vehicle — what "current DOT status" means.
@@ -881,6 +952,38 @@ export async function generateAlerts(organizationId: number) {
         message: isExpired
           ? `Van ${vehicle.vanNumber}'s DOT inspection expired on ${new Date(inspection.expiryDate).toLocaleDateString()}.`
           : `Van ${vehicle.vanNumber}'s DOT inspection expires in ${daysLeft} days (${new Date(inspection.expiryDate).toLocaleDateString()}).`,
+        severity: isExpired ? "critical" : "warning",
+      });
+      generated++;
+    }
+  }
+
+  // 5. Driver medical cert expiring alerts
+  const allDrivers = await getDrivers(organizationId);
+  const latestMedical = await getLatestMedicalCertByDriver(organizationId);
+  for (const cert of Object.values(latestMedical)) {
+    const driver = allDrivers.find(d => d.id === cert.driverId);
+    if (!driver || driver.status !== "active") continue;
+    if (cert.expiryDate > thirtyDaysFromNow) continue;
+
+    const existing = await db.select().from(alerts).where(and(
+      eq(alerts.organizationId, organizationId),
+      eq(alerts.type, "medical_cert_expiring"),
+      eq(alerts.isDismissed, "no"),
+      like(alerts.title, `%${driver.name}%`),
+    )).limit(1);
+
+    if (existing.length === 0) {
+      const isExpired = cert.expiryDate < now;
+      const daysLeft = Math.ceil((cert.expiryDate - now) / (1000 * 60 * 60 * 24));
+      await db.insert(alerts).values({
+        organizationId,
+        vehicleId: null,
+        type: "medical_cert_expiring",
+        title: `Medical cert ${isExpired ? "expired" : "expiring soon"} - ${driver.name}`,
+        message: isExpired
+          ? `${driver.name}'s DOT medical certificate expired on ${new Date(cert.expiryDate).toLocaleDateString()}.`
+          : `${driver.name}'s DOT medical certificate expires in ${daysLeft} days (${new Date(cert.expiryDate).toLocaleDateString()}).`,
         severity: isExpired ? "critical" : "warning",
       });
       generated++;

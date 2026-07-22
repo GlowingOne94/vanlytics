@@ -241,6 +241,7 @@ export const alerts = mysqlTable("alerts", {
     "registration_expiring",
     "overpriced_repair",
     "dot_inspection_expiring",
+    "medical_cert_expiring",
   ]).notNull(),
   title: varchar("title", { length: 200 }).notNull(),
   message: text("message"),
@@ -272,3 +273,43 @@ export const dotInspections = mysqlTable("dot_inspections", {
 
 export type DotInspection = typeof dotInspections.$inferSelect;
 export type InsertDotInspection = typeof dotInspections.$inferInsert;
+
+/**
+ * Drivers - your drivers, tracked as real records (separate from the
+ * free-text assignedDriver field on vehicles).
+ */
+export const drivers = mysqlTable("drivers", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  licenseNumber: varchar("licenseNumber", { length: 50 }),
+  phone: varchar("phone", { length: 30 }),
+  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Driver = typeof drivers.$inferSelect;
+export type InsertDriver = typeof drivers.$inferInsert;
+
+/**
+ * Driver Medical Certs - DOT medical certification history per driver.
+ * Renewal period is either 1 or 2 years depending on the driver's exam
+ * outcome; expiryDate is always entered manually (there's no reliable feed
+ * to pull it from) though the form suggests a default based on the interval.
+ */
+export const driverMedicalCerts = mysqlTable("driver_medical_certs", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull(),
+  examDate: bigint("examDate", { mode: "number" }).notNull(),
+  expiryDate: bigint("expiryDate", { mode: "number" }).notNull(),
+  renewalYears: mysqlEnum("renewalYears", ["1", "2"]).default("2").notNull(),
+  examiner: varchar("examiner", { length: 100 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DriverMedicalCert = typeof driverMedicalCerts.$inferSelect;
+export type InsertDriverMedicalCert = typeof driverMedicalCerts.$inferInsert;

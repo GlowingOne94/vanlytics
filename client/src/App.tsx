@@ -11,6 +11,7 @@ import VehicleDetail from "./pages/VehicleDetail";
 import Repairs from "./pages/Repairs";
 import Maintenance from "./pages/Maintenance";
 import DotInspections from "./pages/DotInspections";
+import DriverAbstracts from "./pages/DriverAbstracts";
 import Shops from "./pages/Shops";
 import CostIntelligence from "./pages/CostIntelligence";
 import Alerts from "./pages/Alerts";
@@ -30,6 +31,7 @@ function AuthenticatedApp() {
         <Route path="/repairs" component={Repairs} />
         <Route path="/maintenance" component={Maintenance} />
         <Route path="/dot-inspections" component={DotInspections} />
+        <Route path="/drivers" component={DriverAbstracts} />
         <Route path="/shops" component={Shops} />
         <Route path="/costs" component={CostIntelligence} />
         <Route path="/alerts" component={Alerts} />

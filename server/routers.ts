@@ -486,6 +486,88 @@ export const appRouter = router({
       }),
   }),
 
+  // ============ DRIVERS ============
+  drivers: router({
+    list: orgProcedure.query(async ({ ctx }) => {
+      return db.getDrivers(ctx.organizationId);
+    }),
+    create: orgProcedure
+      .input(z.object({
+        name: z.string().min(1).max(100),
+        licenseNumber: z.string().optional(),
+        phone: z.string().optional(),
+        status: z.enum(["active", "inactive"]).default("active"),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createDriver(ctx.organizationId, input);
+      }),
+    update: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        licenseNumber: z.string().nullable().optional(),
+        phone: z.string().nullable().optional(),
+        status: z.enum(["active", "inactive"]).optional(),
+        notes: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateDriver(ctx.organizationId, id, data);
+        return { success: true } as const;
+      }),
+    delete: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteDriver(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+  }),
+
+  // ============ DRIVER MEDICAL CERTS ============
+  driverMedicalCerts: router({
+    list: orgProcedure
+      .input(z.object({ driverId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        return db.getDriverMedicalCerts(ctx.organizationId, input?.driverId);
+      }),
+    latestByDriver: orgProcedure.query(async ({ ctx }) => {
+      return db.getLatestMedicalCertByDriver(ctx.organizationId);
+    }),
+    create: orgProcedure
+      .input(z.object({
+        driverId: z.number(),
+        examDate: z.number(),
+        expiryDate: z.number(),
+        renewalYears: z.enum(["1", "2"]).default("2"),
+        examiner: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createDriverMedicalCert(ctx.organizationId, input);
+      }),
+    update: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        examDate: z.number().optional(),
+        expiryDate: z.number().optional(),
+        renewalYears: z.enum(["1", "2"]).optional(),
+        examiner: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateDriverMedicalCert(ctx.organizationId, id, data);
+        return { success: true } as const;
+      }),
+    delete: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteDriverMedicalCert(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+  }),
+
   // ============ ALERTS ============
   alerts: router({
     list: orgProcedure
