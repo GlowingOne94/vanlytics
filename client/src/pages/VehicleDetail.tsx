@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DocumentField, fileToBase64 } from "@/components/DocumentField";
 import { ArrowLeft, Pencil, Save, Truck, X, Upload, Camera } from "lucide-react";
 import { useState, useRef } from "react";
 import { useLocation, useParams } from "wouter";
@@ -60,6 +61,29 @@ export default function VehicleDetail() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const [uploadingDoc, setUploadingDoc] = useState<"title" | "registration" | "insurance" | null>(null);
+  const uploadDocMutation = trpc.vehicles.uploadDocument.useMutation({
+    onSuccess: () => {
+      utils.vehicles.getById.invalidate({ id: vehicleId });
+      setUploadingDoc(null);
+      toast.success("Document uploaded");
+    },
+    onError: (err) => { toast.error(err.message); setUploadingDoc(null); },
+  });
+  const removeDocMutation = trpc.vehicles.removeDocument.useMutation({
+    onSuccess: () => {
+      utils.vehicles.getById.invalidate({ id: vehicleId });
+      toast.success("Document removed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleDocUpload = async (docType: "title" | "registration" | "insurance", file: File) => {
+    setUploadingDoc(docType);
+    const { base64, contentType, fileName } = await fileToBase64(file);
+    uploadDocMutation.mutate({ vehicleId, docType, fileName, fileBase64: base64, contentType });
+  };
 
   const uploadPhotoMutation = trpc.vehicles.uploadPhoto.useMutation({
     onSuccess: () => {
@@ -323,6 +347,35 @@ export default function VehicleDetail() {
                   />
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="text-base">Documents</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <DocumentField
+                label="Title"
+                fileUrl={vehicle.titleDocumentUrl}
+                uploading={uploadingDoc === "title"}
+                onUpload={(file) => handleDocUpload("title", file)}
+                onRemove={() => removeDocMutation.mutate({ vehicleId, docType: "title" })}
+              />
+              <DocumentField
+                label="Registration"
+                fileUrl={vehicle.registrationDocumentUrl}
+                uploading={uploadingDoc === "registration"}
+                onUpload={(file) => handleDocUpload("registration", file)}
+                onRemove={() => removeDocMutation.mutate({ vehicleId, docType: "registration" })}
+              />
+              <DocumentField
+                label="Insurance"
+                fileUrl={vehicle.insuranceDocumentUrl}
+                uploading={uploadingDoc === "insurance"}
+                onUpload={(file) => handleDocUpload("insurance", file)}
+                onRemove={() => removeDocMutation.mutate({ vehicleId, docType: "insurance" })}
+              />
             </CardContent>
           </Card>
         </TabsContent>

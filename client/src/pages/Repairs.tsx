@@ -28,12 +28,25 @@ const categories = [
   "Filters", "Fluids", "Suspension", "Tires", "Transmission", "Wheelchair Lift", "Body", "Other",
 ];
 
-function RepairDocUploader({ repairId, onUploaded }: { repairId: number; onUploaded?: () => void }) {
+function RepairInvoices({ repairId }: { repairId: number }) {
+  const [expanded, setExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+
+  const { data: documents } = trpc.repairs.getDocuments.useQuery({ repairId }, { enabled: expanded });
+
   const uploadMutation = trpc.repairs.uploadDocument.useMutation({
     onSuccess: () => {
-      toast.success("Document uploaded");
-      onUploaded?.();
+      toast.success("Invoice uploaded");
+      utils.repairs.getDocuments.invalidate({ repairId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteMutation = trpc.repairs.deleteDocument.useMutation({
+    onSuccess: () => {
+      toast.success("Invoice removed");
+      utils.repairs.getDocuments.invalidate({ repairId });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -53,15 +66,62 @@ function RepairDocUploader({ repairId, onUploaded }: { repairId: number; onUploa
       });
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   return (
-    <>
+    <div>
       <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx" onChange={handleUpload} />
-      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
-        <Upload className="h-3 w-3" />
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        onClick={() => setExpanded(!expanded)}
+        title="View/upload invoices"
+      >
+        <FileText className="h-3 w-3" />
       </Button>
-    </>
+      {expanded && (
+        <div className="mt-2 p-3 rounded-md border bg-muted/20 space-y-2">
+          {documents === undefined ? (
+            <p className="text-xs text-muted-foreground">Loading...</p>
+          ) : documents.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No invoices uploaded yet.</p>
+          ) : (
+            documents.map((doc) => (
+              <div key={doc.id} className="flex items-center justify-between gap-2 text-sm">
+                <a
+                  href={doc.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline truncate"
+                >
+                  {doc.fileName}
+                </a>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={() => deleteMutation.mutate({ id: doc.id })}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            ))
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={uploadMutation.isPending}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5 mr-1.5" />
+            {uploadMutation.isPending ? "Uploading..." : "Upload Invoice"}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -405,7 +465,7 @@ export default function Repairs() {
                       )}
                     </div>
                     <div className="text-right flex items-start gap-1">
-                      <RepairDocUploader repairId={r.id} />
+                      <RepairInvoices repairId={r.id} />
                       <Button
                         variant="ghost"
                         size="icon"

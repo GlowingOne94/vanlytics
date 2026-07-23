@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard } from "lucide-react";
+import { DocumentField, fileToBase64 } from "@/components/DocumentField";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -58,11 +59,15 @@ export default function DriverAbstracts() {
   const [driverDialogOpen, setDriverDialogOpen] = useState(false);
   const [editingDriverId, setEditingDriverId] = useState<number | null>(null);
   const [driverForm, setDriverForm] = useState({
-    name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", notes: "",
+    name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null as string | null, notes: "",
   });
 
   const createDriverMutation = trpc.drivers.create.useMutation({
-    onSuccess: () => { utils.drivers.list.invalidate(); setDriverDialogOpen(false); toast.success("Driver added"); },
+    onSuccess: (result) => {
+      utils.drivers.list.invalidate();
+      setEditingDriverId(result.id);
+      toast.success("Driver added — you can attach a CDL document below");
+    },
     onError: (err) => toast.error(err.message),
   });
   const updateDriverMutation = trpc.drivers.update.useMutation({
@@ -74,13 +79,42 @@ export default function DriverAbstracts() {
     onError: (err) => toast.error(err.message),
   });
 
+  const [uploadingCdl, setUploadingCdl] = useState(false);
+  const uploadCdlMutation = trpc.drivers.uploadCdlDocument.useMutation({
+    onSuccess: (result) => {
+      utils.drivers.list.invalidate();
+      setUploadingCdl(false);
+      setDriverForm(f => ({ ...f, cdlDocumentUrl: result.url }));
+      toast.success("CDL document uploaded");
+    },
+    onError: (err) => { toast.error(err.message); setUploadingCdl(false); },
+  });
+  const removeCdlMutation = trpc.drivers.removeCdlDocument.useMutation({
+    onSuccess: () => {
+      utils.drivers.list.invalidate();
+      setDriverForm(f => ({ ...f, cdlDocumentUrl: null }));
+      toast.success("CDL document removed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const handleCdlUpload = async (file: File) => {
+    if (!editingDriverId) return;
+    setUploadingCdl(true);
+    const { base64, contentType, fileName } = await fileToBase64(file);
+    uploadCdlMutation.mutate({ driverId: editingDriverId, fileName, fileBase64: base64, contentType });
+  };
+
   // Medical cert dialog
   const [medicalTarget, setMedicalTarget] = useState<{ driverId: number; driverName: string } | null>(null);
   const [editingCertId, setEditingCertId] = useState<number | null>(null);
-  const [medForm, setMedForm] = useState({ examDate: Date.now(), expiryDate: addYears(Date.now(), 2), renewalYears: "2" as "1" | "2", examiner: "", notes: "" });
+  const [medForm, setMedForm] = useState({ examDate: Date.now(), expiryDate: addYears(Date.now(), 2), renewalYears: "2" as "1" | "2", examiner: "", notes: "", documentUrl: null as string | null });
 
   const createCertMutation = trpc.driverMedicalCerts.create.useMutation({
-    onSuccess: () => { utils.driverMedicalCerts.latestByDriver.invalidate(); setMedicalTarget(null); toast.success("Medical cert logged"); },
+    onSuccess: (result) => {
+      utils.driverMedicalCerts.latestByDriver.invalidate();
+      setEditingCertId(result.id);
+      toast.success("Medical cert logged — you can attach a document below");
+    },
     onError: (err) => toast.error(err.message),
   });
   const updateCertMutation = trpc.driverMedicalCerts.update.useMutation({
@@ -88,19 +122,73 @@ export default function DriverAbstracts() {
     onError: (err) => toast.error(err.message),
   });
 
+  const [uploadingCertDoc, setUploadingCertDoc] = useState(false);
+  const uploadCertDocMutation = trpc.driverMedicalCerts.uploadDocument.useMutation({
+    onSuccess: (result) => {
+      utils.driverMedicalCerts.latestByDriver.invalidate();
+      setUploadingCertDoc(false);
+      setMedForm(f => ({ ...f, documentUrl: result.url }));
+      toast.success("Document uploaded");
+    },
+    onError: (err) => { toast.error(err.message); setUploadingCertDoc(false); },
+  });
+  const removeCertDocMutation = trpc.driverMedicalCerts.removeDocument.useMutation({
+    onSuccess: () => {
+      utils.driverMedicalCerts.latestByDriver.invalidate();
+      setMedForm(f => ({ ...f, documentUrl: null }));
+      toast.success("Document removed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const handleCertDocUpload = async (file: File) => {
+    if (!editingCertId) return;
+    setUploadingCertDoc(true);
+    const { base64, contentType, fileName } = await fileToBase64(file);
+    uploadCertDocMutation.mutate({ id: editingCertId, fileName, fileBase64: base64, contentType });
+  };
+
   // Abstract (MVR) dialog
   const [abstractTarget, setAbstractTarget] = useState<{ driverId: number; driverName: string } | null>(null);
   const [editingAbstractId, setEditingAbstractId] = useState<number | null>(null);
-  const [abstractForm, setAbstractForm] = useState({ pulledDate: Date.now(), nextDueDate: addYears(Date.now(), 1), notes: "" });
+  const [abstractForm, setAbstractForm] = useState({ pulledDate: Date.now(), nextDueDate: addYears(Date.now(), 1), notes: "", documentUrl: null as string | null });
 
   const createAbstractMutation = trpc.driverAbstracts.create.useMutation({
-    onSuccess: () => { utils.driverAbstracts.latestByDriver.invalidate(); setAbstractTarget(null); toast.success("Abstract logged"); },
+    onSuccess: (result) => {
+      utils.driverAbstracts.latestByDriver.invalidate();
+      setEditingAbstractId(result.id);
+      toast.success("Abstract logged — you can attach a document below");
+    },
     onError: (err) => toast.error(err.message),
   });
   const updateAbstractMutation = trpc.driverAbstracts.update.useMutation({
     onSuccess: () => { utils.driverAbstracts.latestByDriver.invalidate(); setAbstractTarget(null); toast.success("Abstract updated"); },
     onError: (err) => toast.error(err.message),
   });
+
+  const [uploadingAbstractDoc, setUploadingAbstractDoc] = useState(false);
+  const uploadAbstractDocMutation = trpc.driverAbstracts.uploadDocument.useMutation({
+    onSuccess: (result) => {
+      utils.driverAbstracts.latestByDriver.invalidate();
+      setUploadingAbstractDoc(false);
+      setAbstractForm(f => ({ ...f, documentUrl: result.url }));
+      toast.success("Document uploaded");
+    },
+    onError: (err) => { toast.error(err.message); setUploadingAbstractDoc(false); },
+  });
+  const removeAbstractDocMutation = trpc.driverAbstracts.removeDocument.useMutation({
+    onSuccess: () => {
+      utils.driverAbstracts.latestByDriver.invalidate();
+      setAbstractForm(f => ({ ...f, documentUrl: null }));
+      toast.success("Document removed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const handleAbstractDocUpload = async (file: File) => {
+    if (!editingAbstractId) return;
+    setUploadingAbstractDoc(true);
+    const { base64, contentType, fileName } = await fileToBase64(file);
+    uploadAbstractDocMutation.mutate({ id: editingAbstractId, fileName, fileBase64: base64, contentType });
+  };
 
   const loading = loadingDrivers || loadingMedical || loadingAbstract;
 
@@ -138,7 +226,7 @@ export default function DriverAbstracts() {
   // Driver dialog handlers
   const openAddDriver = () => {
     setEditingDriverId(null);
-    setDriverForm({ name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", notes: "" });
+    setDriverForm({ name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null, notes: "" });
     setDriverDialogOpen(true);
   };
   const openEditDriver = (d: NonNullable<typeof drivers>[number]) => {
@@ -150,6 +238,7 @@ export default function DriverAbstracts() {
       ssnLast4: d.ssnLast4 ?? "",
       dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth).toISOString().split("T")[0] : "",
       cdlExpiry: d.cdlExpiry ? new Date(d.cdlExpiry).toISOString().split("T")[0] : "",
+      cdlDocumentUrl: d.cdlDocumentUrl ?? null,
       notes: d.notes ?? "",
     });
     setDriverDialogOpen(true);
@@ -181,7 +270,7 @@ export default function DriverAbstracts() {
   const openLogMedical = (driverId: number, driverName: string) => {
     setEditingCertId(null);
     setMedicalTarget({ driverId, driverName });
-    setMedForm({ examDate: Date.now(), expiryDate: addYears(Date.now(), 2), renewalYears: "2", examiner: "", notes: "" });
+    setMedForm({ examDate: Date.now(), expiryDate: addYears(Date.now(), 2), renewalYears: "2", examiner: "", notes: "", documentUrl: null });
   };
   const openEditMedical = (driverId: number, driverName: string, cert: NonNullable<typeof latestMedical>[number]) => {
     setEditingCertId(cert.id);
@@ -189,6 +278,7 @@ export default function DriverAbstracts() {
     setMedForm({
       examDate: cert.examDate, expiryDate: cert.expiryDate,
       renewalYears: cert.renewalYears as "1" | "2", examiner: cert.examiner ?? "", notes: cert.notes ?? "",
+      documentUrl: cert.documentUrl ?? null,
     });
   };
   const handleExamDateOrIntervalChange = (examDate: number, renewalYears: "1" | "2") => {
@@ -211,12 +301,15 @@ export default function DriverAbstracts() {
   const openLogAbstract = (driverId: number, driverName: string) => {
     setEditingAbstractId(null);
     setAbstractTarget({ driverId, driverName });
-    setAbstractForm({ pulledDate: Date.now(), nextDueDate: addYears(Date.now(), 1), notes: "" });
+    setAbstractForm({ pulledDate: Date.now(), nextDueDate: addYears(Date.now(), 1), notes: "", documentUrl: null });
   };
   const openEditAbstract = (driverId: number, driverName: string, abstract: NonNullable<typeof latestAbstract>[number]) => {
     setEditingAbstractId(abstract.id);
     setAbstractTarget({ driverId, driverName });
-    setAbstractForm({ pulledDate: abstract.pulledDate, nextDueDate: abstract.nextDueDate, notes: abstract.notes ?? "" });
+    setAbstractForm({
+      pulledDate: abstract.pulledDate, nextDueDate: abstract.nextDueDate,
+      notes: abstract.notes ?? "", documentUrl: abstract.documentUrl ?? null,
+    });
   };
   const handlePulledDateChange = (pulledDate: number) => {
     setAbstractForm({ ...abstractForm, pulledDate, nextDueDate: addYears(pulledDate, 1) });
@@ -376,6 +469,15 @@ export default function DriverAbstracts() {
               <Label>CDL Expiration Date</Label>
               <Input type="date" value={driverForm.cdlExpiry} onChange={(e) => setDriverForm({ ...driverForm, cdlExpiry: e.target.value })} />
             </div>
+            {editingDriverId && (
+              <DocumentField
+                label="CDL Document"
+                fileUrl={driverForm.cdlDocumentUrl}
+                uploading={uploadingCdl}
+                onUpload={handleCdlUpload}
+                onRemove={() => removeCdlMutation.mutate({ driverId: editingDriverId })}
+              />
+            )}
             <div>
               <Label>Notes</Label>
               <Input value={driverForm.notes} onChange={(e) => setDriverForm({ ...driverForm, notes: e.target.value })} />
@@ -431,6 +533,15 @@ export default function DriverAbstracts() {
               <Label>Notes — optional</Label>
               <Input value={medForm.notes} onChange={(e) => setMedForm({ ...medForm, notes: e.target.value })} />
             </div>
+            {editingCertId && (
+              <DocumentField
+                label="Medical Cert Document"
+                fileUrl={medForm.documentUrl}
+                uploading={uploadingCertDoc}
+                onUpload={handleCertDocUpload}
+                onRemove={() => removeCertDocMutation.mutate({ id: editingCertId })}
+              />
+            )}
             <Button onClick={handleSaveMedical} disabled={createCertMutation.isPending || updateCertMutation.isPending}>
               {createCertMutation.isPending || updateCertMutation.isPending ? "Saving..." : editingCertId ? "Save Changes" : "Log Medical Cert"}
             </Button>
@@ -470,6 +581,15 @@ export default function DriverAbstracts() {
                 onChange={(e) => setAbstractForm({ ...abstractForm, notes: e.target.value })}
               />
             </div>
+            {editingAbstractId && (
+              <DocumentField
+                label="Abstract Document"
+                fileUrl={abstractForm.documentUrl}
+                uploading={uploadingAbstractDoc}
+                onUpload={handleAbstractDocUpload}
+                onRemove={() => removeAbstractDocMutation.mutate({ id: editingAbstractId })}
+              />
+            )}
             <Button onClick={handleSaveAbstract} disabled={createAbstractMutation.isPending || updateAbstractMutation.isPending}>
               {createAbstractMutation.isPending || updateAbstractMutation.isPending
                 ? "Saving..."

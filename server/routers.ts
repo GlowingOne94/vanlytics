@@ -219,6 +219,43 @@ export const appRouter = router({
         await db.updateVehicle(ctx.organizationId, input.vehicleId, { photoUrl: url, photoKey: fileKey });
         return { url, key: fileKey };
       }),
+    uploadDocument: orgProcedure
+      .input(z.object({
+        vehicleId: z.number(),
+        docType: z.enum(["title", "registration", "insurance"]),
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `vehicles/${input.vehicleId}/documents/${input.docType}/${input.fileName}`;
+        const { url, key: fileKey } = await storagePut(key, buffer, input.contentType);
+
+        if (input.docType === "title") {
+          await db.updateVehicle(ctx.organizationId, input.vehicleId, { titleDocumentUrl: url, titleDocumentKey: fileKey });
+        } else if (input.docType === "registration") {
+          await db.updateVehicle(ctx.organizationId, input.vehicleId, { registrationDocumentUrl: url, registrationDocumentKey: fileKey });
+        } else {
+          await db.updateVehicle(ctx.organizationId, input.vehicleId, { insuranceDocumentUrl: url, insuranceDocumentKey: fileKey });
+        }
+        return { url, key: fileKey };
+      }),
+    removeDocument: orgProcedure
+      .input(z.object({
+        vehicleId: z.number(),
+        docType: z.enum(["title", "registration", "insurance"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.docType === "title") {
+          await db.updateVehicle(ctx.organizationId, input.vehicleId, { titleDocumentUrl: null, titleDocumentKey: null });
+        } else if (input.docType === "registration") {
+          await db.updateVehicle(ctx.organizationId, input.vehicleId, { registrationDocumentUrl: null, registrationDocumentKey: null });
+        } else {
+          await db.updateVehicle(ctx.organizationId, input.vehicleId, { insuranceDocumentUrl: null, insuranceDocumentKey: null });
+        }
+        return { success: true } as const;
+      }),
   }),
 
   // ============ REPAIRS ============
@@ -532,6 +569,26 @@ export const appRouter = router({
         await db.deleteDriver(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
+    uploadCdlDocument: orgProcedure
+      .input(z.object({
+        driverId: z.number(),
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `drivers/${input.driverId}/cdl/${input.fileName}`;
+        const { url, key: fileKey } = await storagePut(key, buffer, input.contentType);
+        await db.updateDriver(ctx.organizationId, input.driverId, { cdlDocumentUrl: url, cdlDocumentKey: fileKey });
+        return { url, key: fileKey };
+      }),
+    removeCdlDocument: orgProcedure
+      .input(z.object({ driverId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateDriver(ctx.organizationId, input.driverId, { cdlDocumentUrl: null, cdlDocumentKey: null });
+        return { success: true } as const;
+      }),
   }),
 
   // ============ DRIVER MEDICAL CERTS ============
@@ -576,6 +633,26 @@ export const appRouter = router({
         await db.deleteDriverMedicalCert(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
+    uploadDocument: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `drivers/medical-certs/${input.id}/${input.fileName}`;
+        const { url, key: fileKey } = await storagePut(key, buffer, input.contentType);
+        await db.updateDriverMedicalCert(ctx.organizationId, input.id, { documentUrl: url, documentKey: fileKey });
+        return { url, key: fileKey };
+      }),
+    removeDocument: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateDriverMedicalCert(ctx.organizationId, input.id, { documentUrl: null, documentKey: null });
+        return { success: true } as const;
+      }),
   }),
 
   // ============ DRIVER ABSTRACTS (MVR reviews) ============
@@ -614,6 +691,26 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriverAbstract(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+    uploadDocument: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `drivers/abstracts/${input.id}/${input.fileName}`;
+        const { url, key: fileKey } = await storagePut(key, buffer, input.contentType);
+        await db.updateDriverAbstract(ctx.organizationId, input.id, { documentUrl: url, documentKey: fileKey });
+        return { url, key: fileKey };
+      }),
+    removeDocument: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateDriverAbstract(ctx.organizationId, input.id, { documentUrl: null, documentKey: null });
         return { success: true } as const;
       }),
   }),
