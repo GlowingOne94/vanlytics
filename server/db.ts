@@ -18,6 +18,9 @@ import {
   driverMedicalCerts, DriverMedicalCert, InsertDriverMedicalCert,
   driverAbstracts, DriverAbstract, InsertDriverAbstract,
   driverDocuments, DriverDocument, InsertDriverDocument,
+  routeImports, RouteImport, InsertRouteImport,
+  trips, Trip, InsertTrip,
+  tripStatusEvents, TripStatusEvent, InsertTripStatusEvent,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1329,4 +1332,157 @@ export async function getAverageRepairPricing(organizationId: number) {
     avgLabor: Math.round((data.labor / data.count) * 100) / 100,
     count: data.count,
   })).sort((a, b) => b.count - a.count);
+}
+
+// ============ ROUTE PLANNING HELPERS ============
+
+export async function createRouteImport(organizationId: number, data: Omit<InsertRouteImport, "organizationId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(routeImports).values({ ...data, organizationId });
+  return { id: result[0].insertId };
+}
+
+export async function getRouteImports(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(routeImports).where(eq(routeImports.organizationId, organizationId)).orderBy(desc(routeImports.createdAt));
+}
+
+export async function createTripsBulk(organizationId: number, importId: number | null, rows: Omit<InsertTrip, "organizationId" | "importId">[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (rows.length === 0) return { count: 0 };
+  await db.insert(trips).values(rows.map(r => ({ ...r, organizationId, importId })));
+  return { count: rows.length };
+}
+
+export async function getTripsByDate(organizationId: number, tripDate: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // tripDate is a day boundary; match anything within that calendar day.
+  const dayStart = new Date(tripDate);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  return db.select().from(trips)
+    .where(and(
+      eq(trips.organizationId, organizationId),
+      gte(trips.tripDate, dayStart.getTime()),
+      sql`${trips.tripDate} < ${dayEnd.getTime()}`,
+    ))
+    .orderBy(trips.pickupTime);
+}
+
+export async function getTripById(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(trips).where(and(eq(trips.id, id), eq(trips.organizationId, organizationId))).limit(1);
+  return result[0];
+}
+
+export async function updateTrip(organizationId: number, id: number, data: Partial<InsertTrip>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(trips).set(data).where(and(eq(trips.id, id), eq(trips.organizationId, organizationId)));
+}
+
+export async function deleteTrip(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(trips).where(and(eq(trips.id, id), eq(trips.organizationId, organizationId)));
+}
+
+export async function logTripStatusEvent(organizationId: number, data: Omit<InsertTripStatusEvent, "organizationId">) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(tripStatusEvents).values({ ...data, organizationId });
+}
+
+export async function getTripStatusEvents(organizationId: number, tripId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(tripStatusEvents)
+    .where(and(eq(tripStatusEvents.tripId, tripId), eq(tripStatusEvents.organizationId, organizationId)))
+    .orderBy(desc(tripStatusEvents.createdAt));
+}
+
+// Lightweight heuristic pairing suggestion: same passenger label + same
+// date + reversed pickup/dropoff addresses. Dispatcher must confirm —
+// never auto-merged.
+export async function suggestTripPairs(organizationId: number, tripDate: number) {
+  const dayTrips = await getTripsByDate(organizationId, tripDate);
+  const unpaired = dayTrips.filter(t => !t.pairedTripId);
+  const suggestions: { tripAId: number; tripBId: number; reason: string }[] = [];
+
+  const normalize = (s: string | null) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+  for (let i = 0; i < unpaired.length; i++) {
+    for (let j = i + 1; j < unpaired.length; j++) {
+      const a = unpaired[i];
+      const b = unpaired[j];
+      if (!a.passengerLabel || !b.passengerLabel) continue;
+      if (normalize(a.passengerLabel) !== normalize(b.passengerLabel)) continue;
+
+      const reversed =
+        normalize(a.pickupAddress) === normalize(b.dropoffAddress) &&
+        normalize(a.dropoffAddress) === normalize(b.pickupAddress);
+
+      if (reversed) {
+        suggestions.push({
+          tripAId: a.pickupTime <= b.pickupTime ? a.id : b.id,
+          tripBId: a.pickupTime <= b.pickupTime ? b.id : a.id,
+          reason: "Same passenger label, same day, reversed pickup/drop-off — likely outbound/return pair.",
+        });
+      }
+    }
+  }
+  return suggestions;
+}
+
+export async function linkTripPair(organizationId: number, tripAId: number, tripBId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(trips).set({ pairedTripId: tripBId, legType: "A" }).where(and(eq(trips.id, tripAId), eq(trips.organizationId, organizationId)));
+  await db.update(trips).set({ pairedTripId: tripAId, legType: "B" }).where(and(eq(trips.id, tripBId), eq(trips.organizationId, organizationId)));
+}
+
+export async function unlinkTripPair(organizationId: number, tripId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const trip = await getTripById(organizationId, tripId);
+  if (!trip) return;
+  await db.update(trips).set({ pairedTripId: null, legType: "unknown" }).where(and(eq(trips.id, tripId), eq(trips.organizationId, organizationId)));
+  if (trip.pairedTripId) {
+    await db.update(trips).set({ pairedTripId: null, legType: "unknown" }).where(and(eq(trips.id, trip.pairedTripId), eq(trips.organizationId, organizationId)));
+  }
+}
+
+// Eligible drivers/vehicles for a trip, with exclusion reasons shown for
+// anything filtered out — matches the "explain every exclusion" principle.
+export async function getEligibleDriversForTrip(organizationId: number, trip: Trip) {
+  const allDrivers = await getDrivers(organizationId);
+  return allDrivers.map(d => {
+    const reasons: string[] = [];
+    if (d.status !== "active") reasons.push("Driver is inactive");
+    if (trip.mobilityType === "wheelchair" && d.wheelchairQualified !== "yes") reasons.push("Not wheelchair-qualified");
+    if (trip.twoPersonAssist === "yes" && d.twoPersonAssist !== "yes") reasons.push("Not two-person-assist qualified");
+    if (d.cdlExpiry && d.cdlExpiry < Date.now()) reasons.push("CDL expired");
+    return { driver: d, eligible: reasons.length === 0, reasons };
+  });
+}
+
+export async function getEligibleVehiclesForTrip(organizationId: number, trip: Trip) {
+  const allVehicles = await getVehicles(organizationId);
+  return allVehicles.map(v => {
+    const reasons: string[] = [];
+    if (v.status !== "active") reasons.push(`Vehicle status: ${v.status.replace("_", " ")}`);
+    if (trip.mobilityType === "wheelchair") {
+      if (v.wheelchairCapacity < trip.wheelchairCount) reasons.push("Insufficient wheelchair capacity");
+      if (v.rampStatus !== "operational") reasons.push("Ramp/lift unavailable");
+    }
+    if (v.insuranceExpiry && v.insuranceExpiry < Date.now()) reasons.push("Insurance expired");
+    if (v.registrationExpiry && v.registrationExpiry < Date.now()) reasons.push("Registration expired");
+    return { vehicle: v, eligible: reasons.length === 0, reasons };
+  });
 }

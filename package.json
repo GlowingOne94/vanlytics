@@ -77,7 +77,8 @@
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
     "zod": "^4.1.12",
-    "bcryptjs": "^2.4.3"
+    "bcryptjs": "^2.4.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",

@@ -111,6 +111,9 @@ export const vehicles = mysqlTable("vehicles", {
   registrationDocumentKey: varchar("registrationDocumentKey", { length: 255 }),
   insuranceDocumentUrl: text("insuranceDocumentUrl"),
   insuranceDocumentKey: varchar("insuranceDocumentKey", { length: 255 }),
+  wheelchairCapacity: int("wheelchairCapacity").default(0).notNull(),
+  ambulatorySeats: int("ambulatorySeats").default(0).notNull(),
+  rampStatus: mysqlEnum("rampStatus", ["operational", "unavailable"]).default("operational").notNull(),
   insuranceIssued: bigint("insuranceIssued", { mode: "number" }),
   insuranceExpiry: bigint("insuranceExpiry", { mode: "number" }),
   registrationIssued: bigint("registrationIssued", { mode: "number" }),
@@ -300,6 +303,8 @@ export const drivers = mysqlTable("drivers", {
   cdlExpiry: bigint("cdlExpiry", { mode: "number" }),
   cdlDocumentUrl: text("cdlDocumentUrl"),
   cdlDocumentKey: varchar("cdlDocumentKey", { length: 255 }),
+  wheelchairQualified: mysqlEnum("wheelchairQualified", ["yes", "no"]).default("yes").notNull(),
+  twoPersonAssist: mysqlEnum("twoPersonAssist", ["yes", "no"]).default("no").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -372,3 +377,87 @@ export const driverDocuments = mysqlTable("driver_documents", {
 
 export type DriverDocument = typeof driverDocuments.$inferSelect;
 export type InsertDriverDocument = typeof driverDocuments.$inferInsert;
+
+/* ============================================================
+ * ROUTE PLANNING MODULE (Phase 1A — synthetic/test data only)
+ * ============================================================
+ * This is intentionally a scoped-down first version: manual/assisted
+ * assignment with eligibility checks, not a live optimizer. Real patient
+ * data must not be entered until BAAs are in place with hosting/email/AI
+ * vendors — see project notes. Test with synthetic data only.
+ */
+
+/**
+ * Route Imports - one row per uploaded trip spreadsheet (metadata + the
+ * original file, kept for audit purposes).
+ */
+export const routeImports = mysqlTable("route_imports", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  tripDate: bigint("tripDate", { mode: "number" }).notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileUrl: text("fileUrl"),
+  fileKey: varchar("fileKey", { length: 255 }),
+  uploadedByUserId: int("uploadedByUserId").notNull(),
+  rowCount: int("rowCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type RouteImport = typeof routeImports.$inferSelect;
+export type InsertRouteImport = typeof routeImports.$inferInsert;
+
+/**
+ * Trips - the core Route Planning entity. A-leg/B-leg pairing is done via
+ * pairedTripId (self-referencing), confirmed by a dispatcher rather than
+ * auto-merged. passengerLabel intentionally holds whatever identifier the
+ * org chooses to use (a real name, or a synthetic/coded label during
+ * testing) — the app itself does not assume a real name is present.
+ */
+export const trips = mysqlTable("trips", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  importId: int("importId"),
+  jobId: varchar("jobId", { length: 100 }),
+  tripDate: bigint("tripDate", { mode: "number" }).notNull(),
+  pickupTime: bigint("pickupTime", { mode: "number" }).notNull(),
+  appointmentTime: bigint("appointmentTime", { mode: "number" }),
+  pickupAddress: text("pickupAddress").notNull(),
+  dropoffAddress: text("dropoffAddress").notNull(),
+  legType: mysqlEnum("legType", ["A", "B", "unknown"]).default("unknown").notNull(),
+  pairedTripId: int("pairedTripId"),
+  passengerLabel: varchar("passengerLabel", { length: 150 }),
+  mobilityType: mysqlEnum("mobilityType", ["ambulatory", "wheelchair", "stretcher"]).default("ambulatory").notNull(),
+  wheelchairCount: int("wheelchairCount").default(0).notNull(),
+  twoPersonAssist: mysqlEnum("twoPersonAssist", ["yes", "no"]).default("no").notNull(),
+  phone: varchar("phone", { length: 30 }),
+  facilityName: varchar("facilityName", { length: 150 }),
+  notes: text("notes"),
+  status: mysqlEnum("status", [
+    "imported", "unassigned", "assigned", "dispatched", "in_progress", "completed", "cancelled", "no_show",
+  ]).default("imported").notNull(),
+  assignedDriverId: int("assignedDriverId"),
+  assignedVehicleId: int("assignedVehicleId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Trip = typeof trips.$inferSelect;
+export type InsertTrip = typeof trips.$inferInsert;
+
+/**
+ * Trip Status Events - immutable audit trail of every status change,
+ * assignment change, and pairing change on a trip.
+ */
+export const tripStatusEvents = mysqlTable("trip_status_events", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  tripId: int("tripId").notNull(),
+  fromStatus: varchar("fromStatus", { length: 50 }),
+  toStatus: varchar("toStatus", { length: 50 }).notNull(),
+  changedByUserId: int("changedByUserId"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TripStatusEvent = typeof tripStatusEvents.$inferSelect;
+export type InsertTripStatusEvent = typeof tripStatusEvents.$inferInsert;

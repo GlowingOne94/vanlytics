@@ -12,6 +12,7 @@ import Repairs from "./pages/Repairs";
 import Maintenance from "./pages/Maintenance";
 import DotInspections from "./pages/DotInspections";
 import DriverAbstracts from "./pages/DriverAbstracts";
+import RoutePlanning from "./pages/RoutePlanning";
 import Shops from "./pages/Shops";
 import CostIntelligence from "./pages/CostIntelligence";
 import Alerts from "./pages/Alerts";
@@ -38,6 +39,7 @@ function AuthenticatedApp() {
         <Route path="/analytics" component={Analytics} />
         <Route path="/advisor" component={Advisor} />
         <Route path="/team" component={Team} />
+        <Route path="/route-planning" component={RoutePlanning} />
         <Route component={NotFound} />
       </Switch>
     </DashboardLayout>

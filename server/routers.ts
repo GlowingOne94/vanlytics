@@ -755,6 +755,188 @@ export const appRouter = router({
       }),
   }),
 
+  // ============ ROUTE PLANNING (Phase 1A) ============
+  routePlanning: router({
+    createImport: orgProcedure
+      .input(z.object({
+        tripDate: z.number(),
+        fileName: z.string(),
+        fileBase64: z.string().optional(),
+        contentType: z.string().optional(),
+        rows: z.array(z.object({
+          jobId: z.string().optional(),
+          pickupTime: z.number(),
+          appointmentTime: z.number().optional(),
+          pickupAddress: z.string(),
+          dropoffAddress: z.string(),
+          legType: z.enum(["A", "B", "unknown"]).default("unknown"),
+          passengerLabel: z.string().optional(),
+          mobilityType: z.enum(["ambulatory", "wheelchair", "stretcher"]).default("ambulatory"),
+          wheelchairCount: z.number().default(0),
+          twoPersonAssist: z.enum(["yes", "no"]).default("no"),
+          phone: z.string().optional(),
+          facilityName: z.string().optional(),
+          notes: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        let fileUrl: string | undefined;
+        let fileKey: string | undefined;
+        if (input.fileBase64 && input.contentType) {
+          const buffer = Buffer.from(input.fileBase64, "base64");
+          const key = `route-planning/imports/${ctx.organizationId}/${Date.now()}-${input.fileName}`;
+          const stored = await storagePut(key, buffer, input.contentType);
+          fileUrl = stored.url;
+          fileKey = stored.key;
+        }
+
+        const importResult = await db.createRouteImport(ctx.organizationId, {
+          tripDate: input.tripDate,
+          fileName: input.fileName,
+          fileUrl,
+          fileKey,
+          uploadedByUserId: ctx.user.id,
+          rowCount: input.rows.length,
+        });
+
+        await db.createTripsBulk(
+          ctx.organizationId,
+          importResult.id,
+          input.rows.map(r => ({
+            tripDate: input.tripDate,
+            pickupTime: r.pickupTime,
+            appointmentTime: r.appointmentTime,
+            pickupAddress: r.pickupAddress,
+            dropoffAddress: r.dropoffAddress,
+            legType: r.legType,
+            passengerLabel: r.passengerLabel,
+            mobilityType: r.mobilityType,
+            wheelchairCount: r.wheelchairCount,
+            twoPersonAssist: r.twoPersonAssist,
+            phone: r.phone,
+            facilityName: r.facilityName,
+            notes: r.notes,
+            jobId: r.jobId,
+            status: "unassigned",
+          }))
+        );
+
+        return { importId: importResult.id, count: input.rows.length } as const;
+      }),
+    listImports: orgProcedure.query(async ({ ctx }) => {
+      return db.getRouteImports(ctx.organizationId);
+    }),
+    listByDate: orgProcedure
+      .input(z.object({ tripDate: z.number() }))
+      .query(async ({ input, ctx }) => {
+        return db.getTripsByDate(ctx.organizationId, input.tripDate);
+      }),
+    suggestPairs: orgProcedure
+      .input(z.object({ tripDate: z.number() }))
+      .query(async ({ input, ctx }) => {
+        return db.suggestTripPairs(ctx.organizationId, input.tripDate);
+      }),
+    linkPair: orgProcedure
+      .input(z.object({ tripAId: z.number(), tripBId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.linkTripPair(ctx.organizationId, input.tripAId, input.tripBId);
+        return { success: true } as const;
+      }),
+    unlinkPair: orgProcedure
+      .input(z.object({ tripId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.unlinkTripPair(ctx.organizationId, input.tripId);
+        return { success: true } as const;
+      }),
+    eligibility: orgProcedure
+      .input(z.object({ tripId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const trip = await db.getTripById(ctx.organizationId, input.tripId);
+        if (!trip) throw new TRPCError({ code: "NOT_FOUND", message: "Trip not found." });
+        const [drivers, vehicles] = await Promise.all([
+          db.getEligibleDriversForTrip(ctx.organizationId, trip),
+          db.getEligibleVehiclesForTrip(ctx.organizationId, trip),
+        ]);
+        return { drivers, vehicles };
+      }),
+    assign: orgProcedure
+      .input(z.object({
+        tripId: z.number(),
+        driverId: z.number().nullable(),
+        vehicleId: z.number().nullable(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const trip = await db.getTripById(ctx.organizationId, input.tripId);
+        if (!trip) throw new TRPCError({ code: "NOT_FOUND", message: "Trip not found." });
+
+        const newStatus = input.driverId && input.vehicleId ? "assigned" : "unassigned";
+        await db.updateTrip(ctx.organizationId, input.tripId, {
+          assignedDriverId: input.driverId,
+          assignedVehicleId: input.vehicleId,
+          status: newStatus,
+        });
+        await db.logTripStatusEvent(ctx.organizationId, {
+          tripId: input.tripId,
+          fromStatus: trip.status,
+          toStatus: newStatus,
+          changedByUserId: ctx.user.id,
+          note: "Manual assignment change",
+        });
+        return { success: true } as const;
+      }),
+    updateStatus: orgProcedure
+      .input(z.object({
+        tripId: z.number(),
+        status: z.enum(["imported", "unassigned", "assigned", "dispatched", "in_progress", "completed", "cancelled", "no_show"]),
+        note: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const trip = await db.getTripById(ctx.organizationId, input.tripId);
+        if (!trip) throw new TRPCError({ code: "NOT_FOUND", message: "Trip not found." });
+        await db.updateTrip(ctx.organizationId, input.tripId, { status: input.status });
+        await db.logTripStatusEvent(ctx.organizationId, {
+          tripId: input.tripId,
+          fromStatus: trip.status,
+          toStatus: input.status,
+          changedByUserId: ctx.user.id,
+          note: input.note,
+        });
+        return { success: true } as const;
+      }),
+    update: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        jobId: z.string().nullable().optional(),
+        pickupTime: z.number().optional(),
+        appointmentTime: z.number().nullable().optional(),
+        pickupAddress: z.string().optional(),
+        dropoffAddress: z.string().optional(),
+        passengerLabel: z.string().nullable().optional(),
+        mobilityType: z.enum(["ambulatory", "wheelchair", "stretcher"]).optional(),
+        wheelchairCount: z.number().optional(),
+        twoPersonAssist: z.enum(["yes", "no"]).optional(),
+        phone: z.string().nullable().optional(),
+        facilityName: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateTrip(ctx.organizationId, id, data);
+        return { success: true } as const;
+      }),
+    delete: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteTrip(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+    statusHistory: orgProcedure
+      .input(z.object({ tripId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        return db.getTripStatusEvents(ctx.organizationId, input.tripId);
+      }),
+  }),
+
   // ============ ALERTS ============
   alerts: router({
     list: orgProcedure
