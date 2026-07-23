@@ -715,6 +715,46 @@ export const appRouter = router({
       }),
   }),
 
+  // ============ DRIVER DOCUMENT LIBRARY ============
+  driverDocuments: router({
+    list: orgProcedure
+      .input(z.object({ driverId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        return db.getDriverDocuments(ctx.organizationId, input?.driverId);
+      }),
+    upload: orgProcedure
+      .input(z.object({
+        driverId: z.number(),
+        category: z.enum(["cdl", "medical", "abstract", "other"]).default("other"),
+        year: z.number().optional(),
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `drivers/${input.driverId}/documents/${input.category}/${Date.now()}-${input.fileName}`;
+        const { url, key: fileKey } = await storagePut(key, buffer, input.contentType);
+        const result = await db.createDriverDocument(ctx.organizationId, {
+          driverId: input.driverId,
+          category: input.category,
+          year: input.year,
+          fileName: input.fileName,
+          fileUrl: url,
+          fileKey,
+          notes: input.notes,
+        });
+        return { id: result.id, url };
+      }),
+    delete: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteDriverDocument(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+  }),
+
   // ============ ALERTS ============
   alerts: router({
     list: orgProcedure

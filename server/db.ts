@@ -17,6 +17,7 @@ import {
   drivers, Driver, InsertDriver,
   driverMedicalCerts, DriverMedicalCert, InsertDriverMedicalCert,
   driverAbstracts, DriverAbstract, InsertDriverAbstract,
+  driverDocuments, DriverDocument, InsertDriverDocument,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -552,6 +553,31 @@ export async function getLatestAbstractByDriver(organizationId: number) {
     }
   }
   return Object.fromEntries(latest);
+}
+
+// ============ DRIVER DOCUMENT LIBRARY HELPERS ============
+
+export async function getDriverDocuments(organizationId: number, driverId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(driverDocuments.organizationId, organizationId)];
+  if (driverId) conditions.push(eq(driverDocuments.driverId, driverId));
+  return db.select().from(driverDocuments)
+    .where(and(...conditions))
+    .orderBy(desc(driverDocuments.year), desc(driverDocuments.createdAt));
+}
+
+export async function createDriverDocument(organizationId: number, data: Omit<InsertDriverDocument, "organizationId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(driverDocuments).values({ ...data, organizationId });
+  return { id: result[0].insertId };
+}
+
+export async function deleteDriverDocument(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(driverDocuments).where(and(eq(driverDocuments.id, id), eq(driverDocuments.organizationId, organizationId)));
 }
 
 // ============ ALERT HELPERS ============

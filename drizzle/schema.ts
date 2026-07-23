@@ -350,3 +350,25 @@ export const driverAbstracts = mysqlTable("driver_abstracts", {
 
 export type DriverAbstract = typeof driverAbstracts.$inferSelect;
 export type InsertDriverAbstract = typeof driverAbstracts.$inferInsert;
+
+/**
+ * Driver Documents - a general document library per driver, supporting
+ * multiple files per year/category (e.g. several years of medical cards,
+ * MVR printouts, CDL copies) rather than a single slot per record. This is
+ * what backs the "Documents" browser on the Driver Abstracts page.
+ */
+export const driverDocuments = mysqlTable("driver_documents", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull(),
+  category: mysqlEnum("category", ["cdl", "medical", "abstract", "other"]).default("other").notNull(),
+  year: int("year"),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileUrl: text("fileUrl").notNull(),
+  fileKey: varchar("fileKey", { length: 255 }).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DriverDocument = typeof driverDocuments.$inferSelect;
+export type InsertDriverDocument = typeof driverDocuments.$inferInsert;

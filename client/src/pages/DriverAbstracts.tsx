@@ -18,9 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard } from "lucide-react";
+import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink } from "lucide-react";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 
 type Status = "valid" | "expiring_soon" | "expired" | "never";
@@ -188,6 +188,52 @@ export default function DriverAbstracts() {
     setUploadingAbstractDoc(true);
     const { base64, contentType, fileName } = await fileToBase64(file);
     uploadAbstractDocMutation.mutate({ id: editingAbstractId, fileName, fileBase64: base64, contentType });
+  };
+
+  // Document library browser
+  const [docsTarget, setDocsTarget] = useState<{ driverId: number; driverName: string } | null>(null);
+  const { data: driverDocs } = trpc.driverDocuments.list.useQuery(
+    { driverId: docsTarget?.driverId },
+    { enabled: Boolean(docsTarget) }
+  );
+  const [newDocCategory, setNewDocCategory] = useState<"cdl" | "medical" | "abstract" | "other">("medical");
+  const [newDocYear, setNewDocYear] = useState(String(new Date().getFullYear()));
+  const [uploadingDriverDoc, setUploadingDriverDoc] = useState(false);
+
+  const uploadDriverDocMutation = trpc.driverDocuments.upload.useMutation({
+    onSuccess: () => {
+      utils.driverDocuments.list.invalidate({ driverId: docsTarget?.driverId });
+      setUploadingDriverDoc(false);
+      toast.success("Document uploaded");
+    },
+    onError: (err) => { toast.error(err.message); setUploadingDriverDoc(false); },
+  });
+  const deleteDriverDocMutation = trpc.driverDocuments.delete.useMutation({
+    onSuccess: () => {
+      utils.driverDocuments.list.invalidate({ driverId: docsTarget?.driverId });
+      toast.success("Document removed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const openDocsBrowser = (driverId: number, driverName: string) => {
+    setDocsTarget({ driverId, driverName });
+    setNewDocCategory("medical");
+    setNewDocYear(String(new Date().getFullYear()));
+  };
+
+  const handleDriverDocFilePicked = async (file: File) => {
+    if (!docsTarget) return;
+    setUploadingDriverDoc(true);
+    const { base64, contentType, fileName } = await fileToBase64(file);
+    uploadDriverDocMutation.mutate({
+      driverId: docsTarget.driverId,
+      category: newDocCategory,
+      year: parseInt(newDocYear) || undefined,
+      fileName,
+      fileBase64: base64,
+      contentType,
+    });
   };
 
   const loading = loadingDrivers || loadingMedical || loadingAbstract;
@@ -358,6 +404,12 @@ export default function DriverAbstracts() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost" size="sm" className="h-8 px-2 text-xs"
+                      onClick={() => openDocsBrowser(driver.id, driver.name)}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 mr-1" /> Documents
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDriver(driver)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
@@ -598,6 +650,102 @@ export default function DriverAbstracts() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Document library browser */}
+      <Dialog open={Boolean(docsTarget)} onOpenChange={(open) => { if (!open) setDocsTarget(null); }}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{docsTarget ? `Documents — ${docsTarget.driverName}` : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-3 gap-2 items-end p-3 rounded-md border bg-muted/20">
+              <div>
+                <Label className="text-xs">Category</Label>
+                <Select value={newDocCategory} onValueChange={(v) => setNewDocCategory(v as typeof newDocCategory)}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cdl">CDL</SelectItem>
+                    <SelectItem value="medical">Medical</SelectItem>
+                    <SelectItem value="abstract">Abstract</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Year</Label>
+                <Input
+                  type="number"
+                  className="h-9"
+                  value={newDocYear}
+                  onChange={(e) => setNewDocYear(e.target.value)}
+                />
+              </div>
+              <DriverDocFileButton disabled={uploadingDriverDoc} onPick={handleDriverDocFilePicked} />
+            </div>
+
+            <div className="space-y-1.5">
+              {!driverDocs ? (
+                <p className="text-xs text-muted-foreground">Loading...</p>
+              ) : driverDocs.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">No documents uploaded yet for this driver.</p>
+              ) : (
+                driverDocs.map((doc) => (
+                  <div key={doc.id} className="flex items-center justify-between gap-2 p-2 rounded-md border text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Badge variant="outline" className="text-xs capitalize shrink-0">{doc.category}</Badge>
+                      {doc.year && <span className="text-xs text-muted-foreground shrink-0">{doc.year}</span>}
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline truncate flex items-center gap-1"
+                      >
+                        {doc.fileName} <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    </div>
+                    <Button
+                      variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+                      onClick={() => deleteDriverDocMutation.mutate({ id: doc.id })}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function DriverDocFileButton({ onPick, disabled }: { onPick: (file: File) => void; disabled?: boolean }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div>
+      <Label className="text-xs opacity-0 select-none">Upload</Label>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="image/*,.pdf,.doc,.docx"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onPick(file);
+          e.target.value = "";
+        }}
+      />
+      <Button
+        type="button"
+        size="sm"
+        className="h-9 w-full"
+        disabled={disabled}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <Upload className="h-3.5 w-3.5 mr-1" />
+        {disabled ? "..." : "Upload"}
+      </Button>
     </div>
   );
 }
