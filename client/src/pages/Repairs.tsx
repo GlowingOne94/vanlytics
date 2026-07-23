@@ -125,6 +125,11 @@ export default function Repairs() {
     notes: "",
   });
 
+  const computeTotal = (parts: string, labor: string, tax: string) => {
+    const sum = (Number(parts) || 0) + (Number(labor) || 0) + (Number(tax) || 0);
+    return String(Math.round(sum * 100) / 100);
+  };
+
   const resetForm = () => {
     setEditingId(null);
     setForm({
@@ -281,10 +286,40 @@ export default function Repairs() {
                 <Input value={form.partsReplaced} onChange={(e) => setForm({ ...form, partsReplaced: e.target.value })} placeholder="e.g. AC Compressor, Belt" />
               </div>
               <div className="grid grid-cols-4 gap-3">
-                <div><Label>Parts $</Label><Input value={form.partsCost} onChange={(e) => setForm({ ...form, partsCost: e.target.value })} /></div>
-                <div><Label>Labor $</Label><Input value={form.laborCost} onChange={(e) => setForm({ ...form, laborCost: e.target.value })} /></div>
-                <div><Label>Tax $</Label><Input value={form.tax} onChange={(e) => setForm({ ...form, tax: e.target.value })} /></div>
-                <div><Label>Total $</Label><Input value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })} /></div>
+                <div>
+                  <Label>Parts $</Label>
+                  <Input
+                    value={form.partsCost}
+                    onChange={(e) => {
+                      const partsCost = e.target.value;
+                      setForm({ ...form, partsCost, totalCost: computeTotal(partsCost, form.laborCost, form.tax) });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label>Labor $</Label>
+                  <Input
+                    value={form.laborCost}
+                    onChange={(e) => {
+                      const laborCost = e.target.value;
+                      setForm({ ...form, laborCost, totalCost: computeTotal(form.partsCost, laborCost, form.tax) });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label>Tax $</Label>
+                  <Input
+                    value={form.tax}
+                    onChange={(e) => {
+                      const tax = e.target.value;
+                      setForm({ ...form, tax, totalCost: computeTotal(form.partsCost, form.laborCost, tax) });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label>Total $</Label>
+                  <Input value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })} />
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
