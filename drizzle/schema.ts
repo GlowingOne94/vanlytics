@@ -297,7 +297,7 @@ export const drivers = mysqlTable("drivers", {
   name: varchar("name", { length: 100 }).notNull(),
   licenseNumber: varchar("licenseNumber", { length: 50 }),
   phone: varchar("phone", { length: 30 }),
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "archived", "disqualified"]).default("active").notNull(),
   ssnLast4: varchar("ssnLast4", { length: 4 }),
   dateOfBirth: bigint("dateOfBirth", { mode: "number" }),
   cdlExpiry: bigint("cdlExpiry", { mode: "number" }),

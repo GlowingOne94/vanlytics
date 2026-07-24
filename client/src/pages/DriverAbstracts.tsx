@@ -57,9 +57,11 @@ export default function DriverAbstracts() {
 
   // Driver create/edit dialog
   const [driverDialogOpen, setDriverDialogOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived" | "disqualified">("active");
   const [editingDriverId, setEditingDriverId] = useState<number | null>(null);
   const [driverForm, setDriverForm] = useState({
-    name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null as string | null, notes: "",
+    name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null as string | null,
+    status: "active" as "active" | "archived" | "disqualified", notes: "",
   });
 
   const createDriverMutation = trpc.drivers.create.useMutation({
@@ -250,7 +252,8 @@ export default function DriverAbstracts() {
   }
 
   const now = Date.now();
-  const rows = (drivers ?? []).map(d => {
+  const filteredDrivers = (drivers ?? []).filter(d => statusFilter === "all" || d.status === statusFilter);
+  const rows = filteredDrivers.map(d => {
     const medical = latestMedical?.[d.id] ?? null;
     const abstract = latestAbstract?.[d.id] ?? null;
     return {
@@ -272,7 +275,7 @@ export default function DriverAbstracts() {
   // Driver dialog handlers
   const openAddDriver = () => {
     setEditingDriverId(null);
-    setDriverForm({ name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null, notes: "" });
+    setDriverForm({ name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null, status: "active", notes: "" });
     setDriverDialogOpen(true);
   };
   const openEditDriver = (d: NonNullable<typeof drivers>[number]) => {
@@ -285,6 +288,7 @@ export default function DriverAbstracts() {
       dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth).toISOString().split("T")[0] : "",
       cdlExpiry: d.cdlExpiry ? new Date(d.cdlExpiry).toISOString().split("T")[0] : "",
       cdlDocumentUrl: d.cdlDocumentUrl ?? null,
+      status: d.status as "active" | "archived" | "disqualified",
       notes: d.notes ?? "",
     });
     setDriverDialogOpen(true);
@@ -299,6 +303,7 @@ export default function DriverAbstracts() {
       ssnLast4: driverForm.ssnLast4 || undefined,
       dateOfBirth: driverForm.dateOfBirth ? new Date(driverForm.dateOfBirth).getTime() : undefined,
       cdlExpiry: driverForm.cdlExpiry ? new Date(driverForm.cdlExpiry).getTime() : undefined,
+      status: driverForm.status,
       notes: driverForm.notes || undefined,
     };
     if (editingDriverId) {
@@ -372,18 +377,31 @@ export default function DriverAbstracts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Driver Abstracts</h1>
           <p className="text-muted-foreground text-sm mt-1">Driver records, CDL status, medical certs, and MVR reviews</p>
         </div>
-        <Button size="sm" onClick={openAddDriver}>
-          <Plus className="h-4 w-4 mr-1" /> Add Driver
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Drivers</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+              <SelectItem value="disqualified">Disqualified</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={openAddDriver}>
+            <Plus className="h-4 w-4 mr-1" /> Add Driver
+          </Button>
+        </div>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">No drivers added yet.</p>
+        <p className="text-sm text-muted-foreground text-center py-8">
+          {statusFilter === "all" ? "No drivers added yet." : `No ${statusFilter} drivers.`}
+        </p>
       ) : (
         <div className="space-y-3">
           {rows.map(({ driver, medical, medicalStatus, cdlStatus, abstract, abstractStatus }) => (
@@ -395,7 +413,14 @@ export default function DriverAbstracts() {
                     <div>
                       <p className="text-sm font-medium">
                         {driver.name}
-                        {driver.status === "inactive" && <Badge variant="outline" className="ml-2 text-xs">Inactive</Badge>}
+                        {driver.status !== "active" && (
+                          <Badge
+                            variant="outline"
+                            className={`ml-2 text-xs capitalize ${driver.status === "disqualified" ? "bg-red-500/15 text-red-500 border-red-500/30" : ""}`}
+                          >
+                            {driver.status}
+                          </Badge>
+                        )}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {driver.licenseNumber && `Lic# ${driver.licenseNumber}`}
@@ -498,9 +523,20 @@ export default function DriverAbstracts() {
                 <Input value={driverForm.licenseNumber} onChange={(e) => setDriverForm({ ...driverForm, licenseNumber: e.target.value })} />
               </div>
               <div>
-                <Label>Phone</Label>
-                <Input value={driverForm.phone} onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })} />
+                <Label>Status</Label>
+                <Select value={driverForm.status} onValueChange={(v) => setDriverForm({ ...driverForm, status: v as "active" | "archived" | "disqualified" })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
+                    <SelectItem value="disqualified">Disqualified</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input value={driverForm.phone} onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

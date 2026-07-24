@@ -281,7 +281,7 @@ export default function VehicleDetail() {
                           .filter(d => d.status === "active" || d.name === editForm.assignedDriver)
                           .map((d) => (
                             <SelectItem key={d.id} value={d.name}>
-                              {d.name}{d.status !== "active" ? " (inactive)" : ""}
+                              {d.name}{d.status !== "active" ? ` (${d.status})` : ""}
                             </SelectItem>
                           ))}
                       </SelectContent>
