@@ -53,6 +53,8 @@ export default function DriverAbstracts() {
   const { data: drivers, isLoading: loadingDrivers } = trpc.drivers.list.useQuery();
   const { data: latestMedical, isLoading: loadingMedical } = trpc.driverMedicalCerts.latestByDriver.useQuery();
   const { data: latestAbstract, isLoading: loadingAbstract } = trpc.driverAbstracts.latestByDriver.useQuery();
+  const { data: orgSettings } = trpc.organizations.getSettings.useQuery();
+  const medicalEnabled = orgSettings?.enabledModules.driverMedical ?? true;
   const utils = trpc.useUtils();
 
   // Driver create/edit dialog
@@ -267,7 +269,10 @@ export default function DriverAbstracts() {
   }).sort((a, b) => {
     const worst = (r: typeof a) => {
       const order: Record<Status, number> = { expired: 0, expiring_soon: 1, never: 2, valid: 3 };
-      return Math.min(order[r.medicalStatus.status], order[r.cdlStatus.status], order[r.abstractStatus.status]);
+      const statuses = medicalEnabled
+        ? [order[r.medicalStatus.status], order[r.cdlStatus.status], order[r.abstractStatus.status]]
+        : [order[r.cdlStatus.status], order[r.abstractStatus.status]];
+      return Math.min(...statuses);
     };
     return worst(a) - worst(b);
   });
@@ -447,7 +452,7 @@ export default function DriverAbstracts() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t">
+                <div className={`grid grid-cols-1 gap-2 pt-2 border-t ${medicalEnabled ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                   {/* CDL status */}
                   <div className="flex items-center justify-between gap-2 text-sm">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -461,25 +466,27 @@ export default function DriverAbstracts() {
                   </div>
 
                   {/* Medical status */}
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <HeartPulse className="h-3.5 w-3.5" /> Medical
+                  {medicalEnabled && (
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <HeartPulse className="h-3.5 w-3.5" /> Medical
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className={`text-xs ${STATUS_STYLES[medicalStatus.status].className}`}>
+                          {medical ? new Date(medical.expiryDate).toLocaleDateString() : STATUS_STYLES[medicalStatus.status].label}
+                        </Badge>
+                        {medical ? (
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEditMedical(driver.id, driver.name, medical)}>
+                            Edit
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => openLogMedical(driver.id, driver.name)}>
+                            Log
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className={`text-xs ${STATUS_STYLES[medicalStatus.status].className}`}>
-                        {medical ? new Date(medical.expiryDate).toLocaleDateString() : STATUS_STYLES[medicalStatus.status].label}
-                      </Badge>
-                      {medical ? (
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEditMedical(driver.id, driver.name, medical)}>
-                          Edit
-                        </Button>
-                      ) : (
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => openLogMedical(driver.id, driver.name)}>
-                          Log
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                  )}
 
                   {/* Abstract status */}
                   <div className="flex items-center justify-between gap-2 text-sm">

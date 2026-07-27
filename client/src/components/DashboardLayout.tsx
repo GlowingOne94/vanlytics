@@ -35,12 +35,10 @@ import {
   PanelLeft,
   Sun,
   Moon,
-  Shield,
   Search,
   Users,
   ClipboardCheck,
   UserCircle,
-  Route,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -53,7 +51,6 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Route, label: "Route Planning", path: "/route-planning" },
   { icon: Truck, label: "Fleet", path: "/vehicles" },
   { icon: Wrench, label: "Repairs", path: "/repairs" },
   { icon: Calendar, label: "Maintenance", path: "/maintenance" },
@@ -185,7 +182,7 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed && (
                 <div className="flex items-center gap-2 min-w-0">
-                  <Shield className="h-5 w-5 text-primary shrink-0" />
+                  <img src="/logo.png" alt="Vanlytics" className="h-5 w-auto shrink-0" />
                   <span className="font-semibold tracking-tight truncate text-sm">
                     Vanlytics
                   </span>

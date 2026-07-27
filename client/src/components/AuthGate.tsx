@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { Shield } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 type Mode = "login" | "signup" | "forgot";
 
 export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [mode, setMode] = useState<Mode>("login");
   const [companyName, setCompanyName] = useState("");
+  const [industryType, setIndustryType] = useState<"nemt" | "other">("other");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,7 +43,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
       const body =
         mode === "login"
           ? { email, password }
-          : { companyName, name, email, password };
+          : { companyName, name, email, password, industryType };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -76,7 +77,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
       <div className="flex flex-col items-center gap-6 p-8 max-w-md w-full">
         <div className="flex flex-col items-center gap-4">
           <div className="flex items-center gap-3">
-            <Shield className="h-10 w-10 text-primary" />
+            <img src="/logo.png" alt="Vanlytics" className="h-10 w-auto" />
             <h1 className="text-3xl font-bold tracking-tight">Vanlytics</h1>
           </div>
           <p className="text-sm text-muted-foreground text-center max-w-sm">
@@ -97,6 +98,21 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
                 onChange={e => setCompanyName(e.target.value)}
                 required
               />
+            </div>
+          )}
+          {mode === "signup" && (
+            <div className="flex flex-col gap-1.5">
+              <Label>Business type</Label>
+              <Select value={industryType} onValueChange={v => setIndustryType(v as "nemt" | "other")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nemt">NEMT / Medical Transportation</SelectItem>
+                  <SelectItem value="other">Other Fleet Service</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Sets sensible defaults (e.g. driver medical-cert tracking) — you can change this anytime in Settings.
+              </p>
             </div>
           )}
           {mode === "signup" && (

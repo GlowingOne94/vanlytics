@@ -18,6 +18,7 @@ const signupSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email(),
   password: z.string().min(8).max(200),
+  industryType: z.enum(["nemt", "other"]).default("other"),
 });
 
 const loginSchema = z.object({
@@ -97,7 +98,7 @@ export function registerAuthRoutes(app: Express) {
       res.status(400).json({ error: "Invalid signup data", details: parsed.error.flatten() });
       return;
     }
-    const { companyName, name, email, password } = parsed.data;
+    const { companyName, name, email, password, industryType } = parsed.data;
 
     const existing = await db.getUserByEmail(email);
     if (existing) {
@@ -113,7 +114,14 @@ export function registerAuthRoutes(app: Express) {
       slug = `${baseSlug}-${attempt}`;
     }
 
-    const organization = await db.createOrganization({ name: companyName, slug });
+    const organization = await db.createOrganization({
+      name: companyName,
+      slug,
+      industryType,
+      // NEMT companies track driver medical certs by default; general fleet
+      // customers don't require it, but can turn it on anytime in Settings.
+      enabledModules: { driverMedical: industryType === "nemt" },
+    });
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const user = await db.createUser({
       email,

@@ -14,7 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, Clock, Trash2 } from "lucide-react";
+import { UserPlus, Users, Clock, Trash2, Settings, DollarSign } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 export default function Team() {
   const activeOrgId = getActiveOrgId();
@@ -26,8 +27,28 @@ export default function Team() {
   const { data: pendingInvites } = trpc.organizations.pendingInvites.useQuery(undefined, {
     enabled: isAdmin,
   });
+  const { data: orgSettings } = trpc.organizations.getSettings.useQuery();
+  const { data: billingStatus } = trpc.billing.getStatus.useQuery(undefined, { enabled: isAdmin });
 
   const utils = trpc.useUtils();
+
+  const updateSettingsMutation = trpc.organizations.updateSettings.useMutation({
+    onSuccess: () => {
+      utils.organizations.getSettings.invalidate();
+      toast.success("Settings updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const checkoutMutation = trpc.billing.createCheckoutSession.useMutation({
+    onSuccess: (result) => { if (result.url) window.location.href = result.url; },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const portalMutation = trpc.billing.createPortalSession.useMutation({
+    onSuccess: (result) => { if (result.url) window.location.href = result.url; },
+    onError: (err) => toast.error(err.message),
+  });
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"user" | "admin">("user");
 
@@ -65,6 +86,80 @@ export default function Team() {
           {currentMembership?.organizationName ?? "Your company"} — manage who has access
         </p>
       </div>
+
+      {isAdmin && orgSettings && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Settings className="h-4 w-4" /> Organization Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label className="text-sm">Business type</Label>
+              <Select
+                value={orgSettings.industryType}
+                onValueChange={(v) => updateSettingsMutation.mutate({ industryType: v as "nemt" | "other" })}
+              >
+                <SelectTrigger className="w-full sm:w-[280px] mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nemt">NEMT / Medical Transportation</SelectItem>
+                  <SelectItem value="other">Other Fleet Service</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between gap-4 pt-2 border-t">
+              <div>
+                <p className="text-sm font-medium">Track driver medical certifications</p>
+                <p className="text-xs text-muted-foreground">
+                  Shows medical-cert tracking on the Driver Abstracts page. Turn off if your drivers don't require DOT medical cards.
+                </p>
+              </div>
+              <Switch
+                checked={orgSettings.enabledModules.driverMedical}
+                onCheckedChange={(checked) => updateSettingsMutation.mutate({ enabledModules: { driverMedical: checked } })}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <DollarSign className="h-4 w-4" /> Billing
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm">
+              Current plan: <span className="font-medium capitalize">{(billingStatus?.planTier ?? "none").replace("_", " ")}</span>
+              {billingStatus?.subscriptionStatus && (
+                <span className="text-muted-foreground"> ({billingStatus.subscriptionStatus})</span>
+              )}
+            </p>
+            {billingStatus?.hasStripeCustomer ? (
+              <Button size="sm" variant="outline" onClick={() => portalMutation.mutate()} disabled={portalMutation.isPending}>
+                {portalMutation.isPending ? "Loading..." : "Manage Billing"}
+              </Button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {(["starter", "fleet", "fleet_pro"] as const).map(plan => (
+                  <Button
+                    key={plan}
+                    size="sm"
+                    variant="outline"
+                    disabled={checkoutMutation.isPending}
+                    onClick={() => checkoutMutation.mutate({ plan })}
+                  >
+                    Subscribe — {plan.replace("_", " ")}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {isAdmin && (
         <Card>

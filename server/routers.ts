@@ -8,6 +8,8 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken } from "./_core/tokens";
 import { sendInviteEmail } from "./_core/email";
+import { stripe, priceIdForPlan, PlanTier } from "./_core/stripe";
+import { ENV } from "./_core/env";
 import * as db from "./db";
 
 export const appRouter = router({
@@ -29,6 +31,24 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return db.getUserMemberships(ctx.user.id);
     }),
+    getSettings: orgProcedure.query(async ({ ctx }) => {
+      const org = await db.getOrganizationById(ctx.organizationId);
+      return {
+        industryType: org?.industryType ?? "other",
+        // Default to true when unset, so orgs created before this feature
+        // existed keep showing medical tracking exactly as before.
+        enabledModules: { driverMedical: org?.enabledModules?.driverMedical ?? true },
+      };
+    }),
+    updateSettings: adminProcedure
+      .input(z.object({
+        industryType: z.enum(["nemt", "other"]).optional(),
+        enabledModules: z.object({ driverMedical: z.boolean().optional() }).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateOrganizationSettings(ctx.organizationId, input);
+        return { success: true } as const;
+      }),
     members: orgProcedure.query(async ({ ctx }) => {
       return db.getOrganizationMembers(ctx.organizationId);
     }),
@@ -935,6 +955,54 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getTripStatusEvents(ctx.organizationId, input.tripId);
       }),
+  }),
+
+  // ============ BILLING (Stripe) ============
+  billing: router({
+    getStatus: orgProcedure.query(async ({ ctx }) => {
+      const org = await db.getOrganizationById(ctx.organizationId);
+      return {
+        planTier: org?.planTier ?? "none",
+        subscriptionStatus: org?.subscriptionStatus ?? null,
+        hasStripeCustomer: Boolean(org?.stripeCustomerId),
+      };
+    }),
+    createCheckoutSession: adminProcedure
+      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]) }))
+      .mutation(async ({ input, ctx }) => {
+        if (!stripe) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet. Add your Stripe keys first." });
+        }
+        const priceId = priceIdForPlan(input.plan as PlanTier);
+        if (!priceId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `No Stripe price configured for the ${input.plan} plan yet.` });
+        }
+        const org = await db.getOrganizationById(ctx.organizationId);
+        const session = await stripe.checkout.sessions.create({
+          mode: "subscription",
+          line_items: [{ price: priceId, quantity: 1 }],
+          success_url: `${ENV.appUrl}/team?billing=success`,
+          cancel_url: `${ENV.appUrl}/pricing?billing=cancelled`,
+          client_reference_id: String(ctx.organizationId),
+          customer_email: org?.stripeCustomerId ? undefined : ctx.user.email,
+          customer: org?.stripeCustomerId || undefined,
+        });
+        return { url: session.url };
+      }),
+    createPortalSession: adminProcedure.mutation(async ({ ctx }) => {
+      if (!stripe) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet." });
+      }
+      const org = await db.getOrganizationById(ctx.organizationId);
+      if (!org?.stripeCustomerId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No billing account on file yet — subscribe to a plan first." });
+      }
+      const portalSession = await stripe.billingPortal.sessions.create({
+        customer: org.stripeCustomerId,
+        return_url: `${ENV.appUrl}/team`,
+      });
+      return { url: portalSession.url };
+    }),
   }),
 
   // ============ ALERTS ============

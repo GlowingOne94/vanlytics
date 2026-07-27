@@ -1,9 +1,12 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { useAuth } from "./_core/hooks/useAuth";
+import { AuthGate } from "./components/AuthGate";
+import { DashboardLayoutSkeleton } from "./components/DashboardLayoutSkeleton";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Vehicles from "./pages/Vehicles";
@@ -12,7 +15,6 @@ import Repairs from "./pages/Repairs";
 import Maintenance from "./pages/Maintenance";
 import DotInspections from "./pages/DotInspections";
 import DriverAbstracts from "./pages/DriverAbstracts";
-import RoutePlanning from "./pages/RoutePlanning";
 import Shops from "./pages/Shops";
 import CostIntelligence from "./pages/CostIntelligence";
 import Alerts from "./pages/Alerts";
@@ -21,6 +23,7 @@ import Advisor from "./pages/Advisor";
 import Team from "./pages/Team";
 import ResetPassword from "./pages/ResetPassword";
 import AcceptInvite from "./pages/AcceptInvite";
+import Marketing from "./pages/Marketing";
 
 function AuthenticatedApp() {
   return (
@@ -39,22 +42,52 @@ function AuthenticatedApp() {
         <Route path="/analytics" component={Analytics} />
         <Route path="/advisor" component={Advisor} />
         <Route path="/team" component={Team} />
-        <Route path="/route-planning" component={RoutePlanning} />
         <Route component={NotFound} />
       </Switch>
     </DashboardLayout>
   );
 }
 
+// The root path shows different things depending on who's visiting: a
+// public marketing/pricing page for anonymous visitors (so potential
+// customers landing on the domain see the product, not a bare login form),
+// and the actual dashboard for signed-in users.
+function RootRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <DashboardLayoutSkeleton />;
+  if (!user) return <Marketing />;
+  return <AuthenticatedApp />;
+}
+
+// A dedicated, linkable login/signup URL for marketing page CTAs. Redirects
+// away automatically if the visitor is already signed in.
+function LoginRoute() {
+  const { user, loading, refresh } = useAuth();
+  const [, setLocation] = useLocation();
+  if (loading) return <DashboardLayoutSkeleton />;
+  if (user) {
+    setLocation("/");
+    return null;
+  }
+  return (
+    <AuthGate
+      onAuthenticated={() => {
+        refresh();
+        setLocation("/");
+      }}
+    />
+  );
+}
+
 function Router() {
   return (
     <Switch>
-      {/* These two pages must render regardless of login state — a visitor
-          resetting a password or accepting an invite may not have an active
-          session yet. Everything else requires auth, gated inside
-          DashboardLayout. */}
+      {/* These pages must render regardless of login state. */}
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/accept-invite" component={AcceptInvite} />
+      <Route path="/pricing" component={Marketing} />
+      <Route path="/login" component={LoginRoute} />
+      <Route path="/" component={RootRoute} />
       <Route>
         <AuthenticatedApp />
       </Route>

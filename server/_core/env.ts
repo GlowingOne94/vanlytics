@@ -7,6 +7,13 @@ export const ENV = {
   // Transactional email (password reset, invites) via Resend.
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "Vanlytics <onboarding@resend.dev>",
+  // Stripe billing — leave keys blank until a Stripe account is set up;
+  // billing features safely no-op with a clear error until configured.
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  stripePriceStarter: process.env.STRIPE_PRICE_STARTER ?? "",
+  stripePriceFleet: process.env.STRIPE_PRICE_FLEET ?? "",
+  stripePriceFleetPro: process.env.STRIPE_PRICE_FLEET_PRO ?? "",
   // LLM provider config (OpenAI-compatible chat completions API)
   llmApiUrl: process.env.LLM_API_URL ?? "https://api.openai.com",
   llmApiKey: process.env.LLM_API_KEY ?? "",

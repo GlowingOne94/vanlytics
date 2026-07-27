@@ -354,27 +354,13 @@ export default function VehicleDetail() {
             <CardHeader>
               <CardTitle className="text-base">Documents</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <DocumentField
-                label="Title"
-                fileUrl={vehicle.titleDocumentUrl}
-                uploading={uploadingDoc === "title"}
-                onUpload={(file) => handleDocUpload("title", file)}
-                onRemove={() => removeDocMutation.mutate({ vehicleId, docType: "title" })}
-              />
+            <CardContent className="grid grid-cols-1 gap-4">
               <DocumentField
                 label="Registration"
                 fileUrl={vehicle.registrationDocumentUrl}
                 uploading={uploadingDoc === "registration"}
                 onUpload={(file) => handleDocUpload("registration", file)}
                 onRemove={() => removeDocMutation.mutate({ vehicleId, docType: "registration" })}
-              />
-              <DocumentField
-                label="Insurance"
-                fileUrl={vehicle.insuranceDocumentUrl}
-                uploading={uploadingDoc === "insurance"}
-                onUpload={(file) => handleDocUpload("insurance", file)}
-                onRemove={() => removeDocMutation.mutate({ vehicleId, docType: "insurance" })}
               />
             </CardContent>
           </Card>

@@ -62,6 +62,36 @@ export async function getOrganizationById(id: number) {
   return result[0];
 }
 
+export async function updateOrganizationSettings(
+  organizationId: number,
+  data: { industryType?: "nemt" | "other"; enabledModules?: { driverMedical?: boolean } }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(organizations).set(data).where(eq(organizations.id, organizationId));
+}
+
+export async function updateOrganizationBilling(
+  organizationId: number,
+  data: {
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string;
+    planTier?: "none" | "starter" | "fleet" | "fleet_pro" | "enterprise";
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(organizations).set(data).where(eq(organizations.id, organizationId));
+}
+
+export async function getOrganizationByStripeCustomerId(stripeCustomerId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(organizations).where(eq(organizations.stripeCustomerId, stripeCustomerId)).limit(1);
+  return result[0];
+}
+
 // ============ USER HELPERS ============
 
 export async function createUser(data: InsertUser): Promise<User> {
