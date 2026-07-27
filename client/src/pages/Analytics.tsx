@@ -11,6 +11,14 @@ import {
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
 
+// Recharts' default tooltip box is always white/light — without this, dark
+// mode's light-gray text color makes it unreadable against that background.
+const tooltipStyle = {
+  contentStyle: { backgroundColor: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, color: "#111" },
+  itemStyle: { color: "#111" },
+  labelStyle: { color: "#111", fontWeight: 600 },
+};
+
 export default function Analytics() {
   const { data: monthlySpending, isLoading: loadingMonthly } = trpc.analytics.monthlySpending.useQuery({ months: 12 });
   const { data: costByVehicle } = trpc.analytics.costByVehicle.useQuery();
@@ -114,7 +122,7 @@ export default function Analytics() {
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
-                <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]} />
+                <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]} {...tooltipStyle} />
                 <Bar dataKey="total" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -138,7 +146,7 @@ export default function Analytics() {
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(value: number) => [`${value} repairs`, "Count"]} />
+                <Tooltip formatter={(value: number) => [`${value} repairs`, "Count"]} {...tooltipStyle} />
                 <Line type="monotone" dataKey="count" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -171,7 +179,7 @@ export default function Analytics() {
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
+                    <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} {...tooltipStyle} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2">
@@ -273,7 +281,7 @@ export default function Analytics() {
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
                 <YAxis type="category" dataKey="vanNumber" tick={{ fontSize: 11 }} width={60} tickFormatter={(v) => `Van ${v}`} />
-                <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Total Cost"]} />
+                <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Total Cost"]} {...tooltipStyle} />
                 <Bar dataKey="total" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>

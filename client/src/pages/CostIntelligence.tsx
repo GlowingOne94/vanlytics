@@ -5,6 +5,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DollarSign, TrendingUp, Truck, BarChart3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
+// Recharts' default tooltip box is always white/light — without this, dark
+// mode's light-gray text color makes it unreadable against that background.
+const tooltipStyle = {
+  contentStyle: { backgroundColor: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, color: "#111" },
+  itemStyle: { color: "#111" },
+  labelStyle: { color: "#111", fontWeight: 600 },
+};
+
 export default function CostIntelligence() {
   const { data: monthlySpending, isLoading: loadingMonthly } = trpc.analytics.monthlySpending.useQuery({ months: 12 });
   const { data: costByVehicle, isLoading: loadingVehicle } = trpc.analytics.costByVehicle.useQuery();
@@ -68,7 +76,7 @@ export default function CostIntelligence() {
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
-                <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]} />
+                <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]} {...tooltipStyle} />
                 <Line type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -123,7 +131,7 @@ export default function CostIntelligence() {
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
                   <YAxis type="category" dataKey="category" tick={{ fontSize: 11 }} width={100} />
-                  <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Total"]} />
+                  <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Total"]} {...tooltipStyle} />
                   <Bar dataKey="total" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
