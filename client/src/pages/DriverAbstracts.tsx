@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink } from "lucide-react";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
+import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 
@@ -290,8 +291,8 @@ export default function DriverAbstracts() {
       licenseNumber: d.licenseNumber ?? "",
       phone: d.phone ?? "",
       ssnLast4: d.ssnLast4 ?? "",
-      dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth).toISOString().split("T")[0] : "",
-      cdlExpiry: d.cdlExpiry ? new Date(d.cdlExpiry).toISOString().split("T")[0] : "",
+      dateOfBirth: toDateInputValue(d.dateOfBirth),
+      cdlExpiry: toDateInputValue(d.cdlExpiry),
       cdlDocumentUrl: d.cdlDocumentUrl ?? null,
       status: d.status as "active" | "archived" | "disqualified",
       notes: d.notes ?? "",
@@ -596,8 +597,8 @@ export default function DriverAbstracts() {
                 <Label>Exam date</Label>
                 <Input
                   type="date"
-                  value={new Date(medForm.examDate).toISOString().split("T")[0]}
-                  onChange={(e) => handleExamDateOrIntervalChange(new Date(e.target.value).getTime(), medForm.renewalYears)}
+                  value={toDateInputValue(medForm.examDate)}
+                  onChange={(e) => handleExamDateOrIntervalChange(fromDateInputValue(e.target.value, medForm.examDate), medForm.renewalYears)}
                 />
               </div>
               <div>
@@ -615,8 +616,8 @@ export default function DriverAbstracts() {
               <Label>Expiration date</Label>
               <Input
                 type="date"
-                value={new Date(medForm.expiryDate).toISOString().split("T")[0]}
-                onChange={(e) => setMedForm({ ...medForm, expiryDate: new Date(e.target.value).getTime() })}
+                value={toDateInputValue(medForm.expiryDate)}
+                onChange={(e) => setMedForm({ ...medForm, expiryDate: fromDateInputValue(e.target.value, medForm.expiryDate) })}
               />
               <p className="text-xs text-muted-foreground mt-1">Suggested from exam date + renewal period — adjust if needed.</p>
             </div>
@@ -655,16 +656,16 @@ export default function DriverAbstracts() {
               <Label>Date pulled</Label>
               <Input
                 type="date"
-                value={new Date(abstractForm.pulledDate).toISOString().split("T")[0]}
-                onChange={(e) => handlePulledDateChange(new Date(e.target.value).getTime())}
+                value={toDateInputValue(abstractForm.pulledDate)}
+                onChange={(e) => handlePulledDateChange(fromDateInputValue(e.target.value, abstractForm.pulledDate))}
               />
             </div>
             <div>
               <Label>Next review due</Label>
               <Input
                 type="date"
-                value={new Date(abstractForm.nextDueDate).toISOString().split("T")[0]}
-                onChange={(e) => setAbstractForm({ ...abstractForm, nextDueDate: new Date(e.target.value).getTime() })}
+                value={toDateInputValue(abstractForm.nextDueDate)}
+                onChange={(e) => setAbstractForm({ ...abstractForm, nextDueDate: fromDateInputValue(e.target.value, abstractForm.nextDueDate) })}
               />
               <p className="text-xs text-muted-foreground mt-1">Suggested one year out — adjust if needed.</p>
             </div>

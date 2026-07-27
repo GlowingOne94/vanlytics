@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -310,8 +311,8 @@ export default function Maintenance() {
                 <Label>Date completed</Label>
                 <Input
                   type="date"
-                  value={new Date(markDoneForm.completedAt).toISOString().split("T")[0]}
-                  onChange={(e) => setMarkDoneForm({ ...markDoneForm, completedAt: new Date(e.target.value).getTime() })}
+                  value={toDateInputValue(markDoneForm.completedAt)}
+                  onChange={(e) => setMarkDoneForm({ ...markDoneForm, completedAt: fromDateInputValue(e.target.value, markDoneForm.completedAt) })}
                 />
               </div>
               <div>

@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -184,8 +185,8 @@ export default function DotInspections() {
                 <Label>Inspection date</Label>
                 <Input
                   type="date"
-                  value={new Date(form.inspectionDate).toISOString().split("T")[0]}
-                  onChange={(e) => setForm({ ...form, inspectionDate: new Date(e.target.value).getTime() })}
+                  value={toDateInputValue(form.inspectionDate)}
+                  onChange={(e) => setForm({ ...form, inspectionDate: fromDateInputValue(e.target.value, form.inspectionDate) })}
                 />
               </div>
               <div>

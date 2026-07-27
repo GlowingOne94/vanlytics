@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { trpc } from "@/lib/trpc";
+import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { fileToBase64 } from "@/components/DocumentField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -224,8 +225,8 @@ function DailyDashboard({
         <Input
           type="date"
           className="w-auto"
-          value={new Date(selectedDate).toISOString().split("T")[0]}
-          onChange={(e) => setSelectedDate(startOfDay(new Date(e.target.value).getTime()))}
+          value={toDateInputValue(selectedDate)}
+          onChange={(e) => setSelectedDate(startOfDay(fromDateInputValue(e.target.value, selectedDate)))}
         />
         <span className="text-sm text-muted-foreground ml-2">
           {new Date(selectedDate).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}

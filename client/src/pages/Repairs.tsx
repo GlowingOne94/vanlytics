@@ -22,6 +22,7 @@ import { Plus, Search, Wrench, Upload, FileText, AlertCircle, Trash2, Pencil } f
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 
 const categories = [
   "AC/HVAC", "Brakes", "Cooling", "DOT Inspection", "Electrical", "Engine", "Exhaust",
@@ -310,8 +311,8 @@ export default function Repairs() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Date</Label>
-                  <Input type="date" value={new Date(form.date).toISOString().split("T")[0]}
-                    onChange={(e) => setForm({ ...form, date: new Date(e.target.value).getTime() })} />
+                  <Input type="date" value={toDateInputValue(form.date)}
+                    onChange={(e) => setForm({ ...form, date: fromDateInputValue(e.target.value, form.date) })} />
                 </div>
                 <div>
                   <Label>Category</Label>

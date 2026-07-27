@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
+import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { ArrowLeft, Pencil, Save, Truck, X, Upload, Camera } from "lucide-react";
 import { useState, useRef } from "react";
 import { useLocation, useParams } from "wouter";
@@ -108,10 +109,10 @@ export default function VehicleDetail() {
         assignedDriver: vehicle.assignedDriver || "",
         status: vehicle.status,
         healthScore: vehicle.healthScore,
-        insuranceIssued: vehicle.insuranceIssued ? new Date(vehicle.insuranceIssued).toISOString().split("T")[0] : "",
-        insuranceExpiry: vehicle.insuranceExpiry ? new Date(vehicle.insuranceExpiry).toISOString().split("T")[0] : "",
-        registrationIssued: vehicle.registrationIssued ? new Date(vehicle.registrationIssued).toISOString().split("T")[0] : "",
-        registrationExpiry: vehicle.registrationExpiry ? new Date(vehicle.registrationExpiry).toISOString().split("T")[0] : "",
+        insuranceIssued: toDateInputValue(vehicle.insuranceIssued),
+        insuranceExpiry: toDateInputValue(vehicle.insuranceExpiry),
+        registrationIssued: toDateInputValue(vehicle.registrationIssued),
+        registrationExpiry: toDateInputValue(vehicle.registrationExpiry),
         notes: vehicle.notes || "",
       });
       setEditing(true);
@@ -124,10 +125,10 @@ export default function VehicleDetail() {
       ...editForm,
       mileage: parseInt(editForm.mileage) || 0,
       year: parseInt(editForm.year) || 2024,
-      insuranceIssued: editForm.insuranceIssued ? new Date(editForm.insuranceIssued).getTime() : undefined,
-      insuranceExpiry: editForm.insuranceExpiry ? new Date(editForm.insuranceExpiry).getTime() : undefined,
-      registrationIssued: editForm.registrationIssued ? new Date(editForm.registrationIssued).getTime() : undefined,
-      registrationExpiry: editForm.registrationExpiry ? new Date(editForm.registrationExpiry).getTime() : undefined,
+      insuranceIssued: editForm.insuranceIssued ? fromDateInputValue(editForm.insuranceIssued) : undefined,
+      insuranceExpiry: editForm.insuranceExpiry ? fromDateInputValue(editForm.insuranceExpiry) : undefined,
+      registrationIssued: editForm.registrationIssued ? fromDateInputValue(editForm.registrationIssued) : undefined,
+      registrationExpiry: editForm.registrationExpiry ? fromDateInputValue(editForm.registrationExpiry) : undefined,
     });
   };
 
