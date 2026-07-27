@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink } from "lucide-react";
+import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink, Download } from "lucide-react";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { useState, useRef } from "react";
@@ -278,6 +278,34 @@ export default function DriverAbstracts() {
     return worst(a) - worst(b);
   });
 
+  const csvField = (value: string) => {
+    // Quote any field containing a comma, quote, or newline, per standard CSV escaping.
+    if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+    return value;
+  };
+  const formatDate = (ms: number | null | undefined) => (ms ? new Date(ms).toLocaleDateString() : "");
+
+  const generateReport = () => {
+    const headers = ["Driver Name", "CDL #", "SSN (Last 4)", "Date of Birth", "CDL Expiration", "Medical Expiration", "Abstract Expiration"];
+    const lines = rows.map(({ driver, medical, abstract }) => [
+      driver.name,
+      driver.licenseNumber || "",
+      driver.ssnLast4 || "",
+      formatDate(driver.dateOfBirth),
+      formatDate(driver.cdlExpiry),
+      medicalEnabled ? formatDate(medical?.expiryDate) : "",
+      formatDate(abstract?.nextDueDate),
+    ].map(csvField).join(","));
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `driver-abstract-report-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Driver dialog handlers
   const openAddDriver = () => {
     setEditingDriverId(null);
@@ -398,6 +426,9 @@ export default function DriverAbstracts() {
               <SelectItem value="disqualified">Disqualified</SelectItem>
             </SelectContent>
           </Select>
+          <Button size="sm" variant="outline" onClick={generateReport}>
+            <Download className="h-4 w-4 mr-1" /> Generate Report
+          </Button>
           <Button size="sm" onClick={openAddDriver}>
             <Plus className="h-4 w-4 mr-1" /> Add Driver
           </Button>
