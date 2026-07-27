@@ -965,6 +965,7 @@ export const appRouter = router({
         planTier: org?.planTier ?? "none",
         subscriptionStatus: org?.subscriptionStatus ?? null,
         hasStripeCustomer: Boolean(org?.stripeCustomerId),
+        isGrandfathered: org?.isGrandfathered === "yes",
       };
     }),
     createCheckoutSession: adminProcedure

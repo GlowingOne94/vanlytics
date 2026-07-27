@@ -14,6 +14,10 @@ export const organizations = mysqlTable("organizations", {
   subscriptionStatus: varchar("subscriptionStatus", { length: 50 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 100 }),
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 100 }),
+  // Exempts an organization from billing requirements and any future
+  // per-plan limits (vehicle count, etc). Set only via migration script for
+  // pre-existing accounts — new signups always default to "no".
+  isGrandfathered: mysqlEnum("isGrandfathered", ["yes", "no"]).default("no").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

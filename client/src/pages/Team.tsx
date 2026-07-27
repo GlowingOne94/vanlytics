@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, Clock, Trash2, Settings, DollarSign } from "lucide-react";
+import { UserPlus, Users, Clock, Trash2, Settings, DollarSign, Check } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 export default function Team() {
@@ -138,7 +138,11 @@ export default function Team() {
                 <span className="text-muted-foreground"> ({billingStatus.subscriptionStatus})</span>
               )}
             </p>
-            {billingStatus?.hasStripeCustomer ? (
+            {billingStatus?.isGrandfathered ? (
+              <p className="text-sm text-green-600 flex items-center gap-1.5">
+                <Check className="h-4 w-4" /> This account is grandfathered — exempt from billing and any future plan limits.
+              </p>
+            ) : billingStatus?.hasStripeCustomer ? (
               <Button size="sm" variant="outline" onClick={() => portalMutation.mutate()} disabled={portalMutation.isPending}>
                 {portalMutation.isPending ? "Loading..." : "Manage Billing"}
               </Button>
