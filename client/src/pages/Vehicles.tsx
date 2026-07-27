@@ -72,6 +72,8 @@ export default function Vehicles() {
     vanNumber: "",
     vin: "",
     year: new Date().getFullYear(),
+    make: "",
+    model: "",
     licensePlate: "",
     engine: "",
     transmission: "",
@@ -98,10 +100,16 @@ export default function Vehicles() {
       toast.error("Van number and VIN are required");
       return;
     }
+    if (!form.make.trim() || !form.model.trim()) {
+      toast.error("Make and model are required");
+      return;
+    }
     createMutation.mutate({
       vanNumber: form.vanNumber,
       vin: form.vin,
       year: form.year,
+      make: form.make.trim(),
+      model: form.model.trim(),
       licensePlate: form.licensePlate || undefined,
       engine: form.engine || undefined,
       transmission: form.transmission || undefined,
@@ -145,6 +153,24 @@ export default function Vehicles() {
                     type="number"
                     value={form.year}
                     onChange={(e) => setForm({ ...form, year: parseInt(e.target.value) || 2024 })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Make *</Label>
+                  <Input
+                    placeholder="e.g. Ford, Dodge, Mercedes"
+                    value={form.make}
+                    onChange={(e) => setForm({ ...form, make: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Model *</Label>
+                  <Input
+                    placeholder="e.g. Transit Ambulette, Sprinter"
+                    value={form.model}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
                   />
                 </div>
               </div>

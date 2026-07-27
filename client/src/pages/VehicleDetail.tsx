@@ -103,6 +103,8 @@ export default function VehicleDetail() {
         vin: vehicle.vin,
         licensePlate: vehicle.licensePlate || "",
         year: vehicle.year,
+        make: vehicle.make,
+        model: vehicle.model,
         mileage: vehicle.mileage,
         engine: vehicle.engine || "",
         transmission: vehicle.transmission || "",
@@ -256,6 +258,14 @@ export default function VehicleDetail() {
                   <div>
                     <Label>Year</Label>
                     <Input type="number" value={editForm.year} onChange={(e) => setEditForm({ ...editForm, year: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Make</Label>
+                    <Input value={editForm.make} onChange={(e) => setEditForm({ ...editForm, make: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Model</Label>
+                    <Input value={editForm.model} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} />
                   </div>
                   <div>
                     <Label>Mileage</Label>
