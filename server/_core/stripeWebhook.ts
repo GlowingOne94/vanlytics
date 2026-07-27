@@ -30,7 +30,17 @@ export function registerStripeWebhook(app: Express) {
         case "checkout.session.completed": {
           const session = event.data.object as Stripe.Checkout.Session;
           const organizationId = parseInt(session.client_reference_id || "", 10);
-          if (organizationId) {
+          if (!organizationId) break;
+
+          if (session.metadata?.purchaseType === "extra_vehicles") {
+            const fullSession = await stripe.checkout.sessions.retrieve(session.id, { expand: ["line_items"] });
+            const quantity = fullSession.line_items?.data?.[0]?.quantity ?? 0;
+            await db.updateOrganizationBilling(organizationId, {
+              stripeCustomerId: (session.customer as string) ?? undefined,
+              stripeExtraVehicleSubscriptionId: (session.subscription as string) ?? undefined,
+              extraVehicleSlots: quantity,
+            });
+          } else {
             const fullSession = await stripe.checkout.sessions.retrieve(session.id, { expand: ["line_items"] });
             const priceId = fullSession.line_items?.data?.[0]?.price?.id;
             await db.updateOrganizationBilling(organizationId, {
@@ -46,11 +56,22 @@ export function registerStripeWebhook(app: Express) {
         case "customer.subscription.deleted": {
           const subscription = event.data.object as Stripe.Subscription;
           const org = await db.getOrganizationByStripeCustomerId(subscription.customer as string);
-          if (org) {
+          if (!org) break;
+
+          const isExtraVehicleSub = subscription.id === org.stripeExtraVehicleSubscriptionId;
+          const isCanceled = subscription.status === "canceled";
+
+          if (isExtraVehicleSub) {
+            const quantity = subscription.items.data[0]?.quantity ?? 0;
+            await db.updateOrganizationBilling(org.id, {
+              extraVehicleSlots: isCanceled ? 0 : quantity,
+              stripeExtraVehicleSubscriptionId: isCanceled ? null : org.stripeExtraVehicleSubscriptionId,
+            });
+          } else {
             const priceId = subscription.items.data[0]?.price?.id;
             await db.updateOrganizationBilling(org.id, {
               subscriptionStatus: subscription.status,
-              planTier: subscription.status === "canceled" ? "none" : planForPriceId(priceId),
+              planTier: isCanceled ? "none" : planForPriceId(priceId),
             });
           }
           break;

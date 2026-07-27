@@ -29,6 +29,8 @@ export default function Team() {
   });
   const { data: orgSettings } = trpc.organizations.getSettings.useQuery();
   const { data: billingStatus } = trpc.billing.getStatus.useQuery(undefined, { enabled: isAdmin });
+  const { data: vehicleLimitStatus } = trpc.billing.vehicleLimitStatus.useQuery(undefined, { enabled: isAdmin });
+  const [extraVehicleQty, setExtraVehicleQty] = useState(5);
 
   const utils = trpc.useUtils();
 
@@ -46,6 +48,11 @@ export default function Team() {
   });
 
   const portalMutation = trpc.billing.createPortalSession.useMutation({
+    onSuccess: (result) => { if (result.url) window.location.href = result.url; },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const extraVehicleCheckoutMutation = trpc.billing.createExtraVehicleCheckoutSession.useMutation({
     onSuccess: (result) => { if (result.url) window.location.href = result.url; },
     onError: (err) => toast.error(err.message),
   });
@@ -142,24 +149,63 @@ export default function Team() {
               <p className="text-sm text-green-600 flex items-center gap-1.5">
                 <Check className="h-4 w-4" /> This account is grandfathered — exempt from billing and any future plan limits.
               </p>
-            ) : billingStatus?.hasStripeCustomer ? (
-              <Button size="sm" variant="outline" onClick={() => portalMutation.mutate()} disabled={portalMutation.isPending}>
-                {portalMutation.isPending ? "Loading..." : "Manage Billing"}
-              </Button>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {(["starter", "fleet", "fleet_pro"] as const).map(plan => (
-                  <Button
-                    key={plan}
-                    size="sm"
-                    variant="outline"
-                    disabled={checkoutMutation.isPending}
-                    onClick={() => checkoutMutation.mutate({ plan })}
-                  >
-                    Subscribe — {plan.replace("_", " ")}
+              <>
+                {billingStatus?.hasStripeCustomer ? (
+                  <Button size="sm" variant="outline" onClick={() => portalMutation.mutate()} disabled={portalMutation.isPending}>
+                    {portalMutation.isPending ? "Loading..." : "Manage Billing"}
                   </Button>
-                ))}
-              </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(["starter", "fleet", "fleet_pro"] as const).map(plan => (
+                      <Button
+                        key={plan}
+                        size="sm"
+                        variant="outline"
+                        disabled={checkoutMutation.isPending}
+                        onClick={() => checkoutMutation.mutate({ plan })}
+                      >
+                        Subscribe — {plan.replace("_", " ")}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                {vehicleLimitStatus && (
+                  <div className="pt-3 border-t space-y-2">
+                    <p className="text-sm">
+                      Vehicles: <span className="font-medium">{vehicleLimitStatus.currentCount}</span>
+                      {" / "}
+                      {vehicleLimitStatus.effectiveLimit ?? "Unlimited"}
+                      {vehicleLimitStatus.extraSlots > 0 && (
+                        <span className="text-muted-foreground"> ({vehicleLimitStatus.baseLimit} base + {vehicleLimitStatus.extraSlots} extra)</span>
+                      )}
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Label className="text-xs">Extra vehicle slots</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={extraVehicleQty}
+                        onChange={(e) => setExtraVehicleQty(parseInt(e.target.value) || 1)}
+                        className="w-20 h-8"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={extraVehicleCheckoutMutation.isPending}
+                        onClick={() => extraVehicleCheckoutMutation.mutate({ quantity: extraVehicleQty })}
+                      >
+                        {extraVehicleCheckoutMutation.isPending ? "Loading..." : "Buy Extra Slots"}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Need more vehicles than your plan allows without upgrading tiers? Add extra slots priced per vehicle.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

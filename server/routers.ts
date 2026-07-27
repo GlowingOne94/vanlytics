@@ -8,7 +8,7 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken } from "./_core/tokens";
 import { sendInviteEmail } from "./_core/email";
-import { stripe, priceIdForPlan, PlanTier } from "./_core/stripe";
+import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, extraVehiclePriceId } from "./_core/stripe";
 import { ENV } from "./_core/env";
 import * as db from "./db";
 
@@ -189,6 +189,18 @@ export const appRouter = router({
         notes: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const org = await db.getOrganizationById(ctx.organizationId);
+        if (org?.isGrandfathered !== "yes") {
+          const baseLimit = PLAN_VEHICLE_LIMITS[org?.planTier ?? "none"] ?? PLAN_VEHICLE_LIMITS.none;
+          const effectiveLimit = baseLimit + (org?.extraVehicleSlots ?? 0);
+          const currentCount = (await db.getVehicles(ctx.organizationId)).length;
+          if (currentCount >= effectiveLimit) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: `You've reached your plan's vehicle limit (${effectiveLimit}). Upgrade your plan or purchase additional vehicle slots from the Team page to add more.`,
+            });
+          }
+        }
         return db.createVehicle(ctx.organizationId, input);
       }),
     update: orgProcedure
@@ -1003,6 +1015,43 @@ export const appRouter = router({
         return_url: `${ENV.appUrl}/team`,
       });
       return { url: portalSession.url };
+    }),
+    createExtraVehicleCheckoutSession: adminProcedure
+      .input(z.object({ quantity: z.number().min(1).max(200) }))
+      .mutation(async ({ input, ctx }) => {
+        if (!stripe) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet." });
+        }
+        const priceId = extraVehiclePriceId();
+        if (!priceId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Extra vehicle slots aren't configured yet." });
+        }
+        const org = await db.getOrganizationById(ctx.organizationId);
+        const session = await stripe.checkout.sessions.create({
+          mode: "subscription",
+          line_items: [{ price: priceId, quantity: input.quantity, adjustable_quantity: { enabled: true, minimum: 1, maximum: 200 } }],
+          success_url: `${ENV.appUrl}/team?billing=success`,
+          cancel_url: `${ENV.appUrl}/team?billing=cancelled`,
+          client_reference_id: String(ctx.organizationId),
+          customer_email: org?.stripeCustomerId ? undefined : ctx.user.email,
+          customer: org?.stripeCustomerId || undefined,
+          metadata: { purchaseType: "extra_vehicles" },
+        });
+        return { url: session.url };
+      }),
+    vehicleLimitStatus: orgProcedure.query(async ({ ctx }) => {
+      const org = await db.getOrganizationById(ctx.organizationId);
+      const baseLimit = PLAN_VEHICLE_LIMITS[org?.planTier ?? "none"] ?? PLAN_VEHICLE_LIMITS.none;
+      const extraSlots = org?.extraVehicleSlots ?? 0;
+      const currentCount = (await db.getVehicles(ctx.organizationId)).length;
+      return {
+        isGrandfathered: org?.isGrandfathered === "yes",
+        planTier: org?.planTier ?? "none",
+        baseLimit: Number.isFinite(baseLimit) ? baseLimit : null,
+        extraSlots,
+        effectiveLimit: Number.isFinite(baseLimit) ? baseLimit + extraSlots : null,
+        currentCount,
+      };
     }),
   }),
 

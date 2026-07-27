@@ -78,6 +78,8 @@ export async function updateOrganizationBilling(
     stripeSubscriptionId?: string;
     subscriptionStatus?: string;
     planTier?: "none" | "starter" | "fleet" | "fleet_pro" | "enterprise";
+    extraVehicleSlots?: number;
+    stripeExtraVehicleSubscriptionId?: string | null;
   }
 ) {
   const db = await getDb();

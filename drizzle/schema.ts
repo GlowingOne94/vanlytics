@@ -18,6 +18,10 @@ export const organizations = mysqlTable("organizations", {
   // per-plan limits (vehicle count, etc). Set only via migration script for
   // pre-existing accounts — new signups always default to "no".
   isGrandfathered: mysqlEnum("isGrandfathered", ["yes", "no"]).default("no").notNull(),
+  // Purchasable add-on vehicle capacity, on top of the plan's base limit —
+  // its own small Stripe subscription, separate from the main plan.
+  extraVehicleSlots: int("extraVehicleSlots").default(0).notNull(),
+  stripeExtraVehicleSubscriptionId: varchar("stripeExtraVehicleSubscriptionId", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
