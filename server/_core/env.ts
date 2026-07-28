@@ -3,7 +3,7 @@ export const ENV = {
   databaseUrl: process.env.DATABASE_URL ?? "",
   isProduction: process.env.NODE_ENV === "production",
   // Public base URL of the deployed app — used to build links in emails.
-  appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  appUrl: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, ""),
   // Transactional email (password reset, invites) via Resend.
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "Vanlytics <onboarding@resend.dev>",
