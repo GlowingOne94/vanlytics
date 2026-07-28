@@ -3,14 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Truck, Wrench, Calendar, ClipboardCheck, UserCircle, DollarSign, Shield, Check,
+  Truck, Wrench, Calendar, ClipboardCheck, UserCircle, DollarSign, Check,
 } from "lucide-react";
 
 const FEATURES = [
   { icon: Truck, title: "Vehicle Profiles", desc: "Full history for every vehicle in your fleet — mileage, documents, insurance, and registration in one place." },
   { icon: Wrench, title: "Maintenance & Repairs", desc: "Log repairs, track costs by category, and never lose an invoice again." },
   { icon: Calendar, title: "Preventive Maintenance", desc: "Automatic reminders for oil changes, tires, brakes, and more — before they become breakdowns." },
-  { icon: ClipboardCheck, title: "DOT / TLC Inspections", desc: "Track inspection dates and expirations across your whole fleet, with alerts before anything lapses." },
+  { icon: ClipboardCheck, title: "DOT Inspections", desc: "Track inspection dates and expirations across your whole fleet, with alerts before anything lapses." },
   { icon: UserCircle, title: "Driver Records", desc: "License, medical certification, and MVR/abstract tracking — configurable to your industry." },
   { icon: DollarSign, title: "Cost Reporting", desc: "See cost per vehicle, cost per mile, and spending trends without digging through spreadsheets." },
 ];
@@ -124,7 +124,7 @@ export default function Marketing() {
         </h1>
         <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
           Track vehicles, maintenance, driver records, and compliance in one place — built for commercial
-          fleets, NEMT and medical transportation providers, and any operation that answers to DOT or TLC.
+          fleets, NEMT and medical transportation providers, and any operation that answers to DOT.
         </p>
         <div className="flex items-center justify-center gap-3">
           <Link href="/login"><Button size="lg">Get Started</Button></Link>
@@ -188,16 +188,13 @@ export default function Marketing() {
             </Card>
           ))}
         </div>
-        <p className="text-center text-xs text-muted-foreground mt-8">
-          Annual billing available (2 months free). Guided data migration starting at $299.
-        </p>
       </section>
 
       {/* Footer */}
       <footer className="border-t mt-8">
         <div className="max-w-6xl mx-auto px-6 py-8 flex items-center justify-between text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4" /> Vanlytics
+            <img src="/logo.png" alt="Vanlytics" className="h-4 w-auto" /> Vanlytics
           </div>
           <p>&copy; {new Date().getFullYear()} Vanlytics. All rights reserved.</p>
         </div>
