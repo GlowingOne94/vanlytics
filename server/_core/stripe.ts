@@ -23,10 +23,10 @@ export function planForPriceId(priceId: string | undefined): "starter" | "fleet"
 }
 
 // Base vehicle limits per plan tier. "none" (no active subscription, not
-// grandfathered) gets a Starter-level cap so new signups can try the
-// product before paying, rather than being blocked outright.
+// grandfathered) is 0 — an organization must subscribe to a plan before
+// adding any vehicles at all.
 export const PLAN_VEHICLE_LIMITS: Record<string, number> = {
-  none: 7,
+  none: 0,
   starter: 7,
   fleet: 20,
   fleet_pro: 40,

@@ -195,10 +195,10 @@ export const appRouter = router({
           const effectiveLimit = baseLimit + (org?.extraVehicleSlots ?? 0);
           const currentCount = (await db.getVehicles(ctx.organizationId)).length;
           if (currentCount >= effectiveLimit) {
-            throw new TRPCError({
-              code: "FORBIDDEN",
-              message: `You've reached your plan's vehicle limit (${effectiveLimit}). Upgrade your plan or purchase additional vehicle slots from the Team page to add more.`,
-            });
+            const message = effectiveLimit === 0
+              ? "Your organization needs an active subscription before adding vehicles. Subscribe to a plan from the Team page to get started."
+              : `You've reached your plan's vehicle limit (${effectiveLimit}). Upgrade your plan or purchase additional vehicle slots from the Team page to add more.`;
+            throw new TRPCError({ code: "FORBIDDEN", message });
           }
         }
         return db.createVehicle(ctx.organizationId, input);
