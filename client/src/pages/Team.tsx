@@ -47,6 +47,14 @@ export default function Team() {
     onError: (err) => toast.error(err.message),
   });
 
+  const changePlanMutation = trpc.billing.changePlan.useMutation({
+    onSuccess: () => {
+      utils.billing.getStatus.invalidate();
+      toast.success("Plan updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const portalMutation = trpc.billing.createPortalSession.useMutation({
     onSuccess: (result) => { if (result.url) window.location.href = result.url; },
     onError: (err) => toast.error(err.message),
@@ -152,9 +160,32 @@ export default function Team() {
             ) : (
               <>
                 {billingStatus?.hasStripeCustomer ? (
-                  <Button size="sm" variant="outline" onClick={() => portalMutation.mutate()} disabled={portalMutation.isPending}>
-                    {portalMutation.isPending ? "Loading..." : "Manage Billing"}
-                  </Button>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {(["starter", "fleet", "fleet_pro"] as const).map(plan => {
+                        const isCurrent = billingStatus.planTier === plan;
+                        return (
+                          <Button
+                            key={plan}
+                            size="sm"
+                            variant={isCurrent ? "secondary" : "outline"}
+                            disabled={isCurrent || changePlanMutation.isPending}
+                            onClick={() => {
+                              if (!window.confirm(`Switch to the ${plan.replace("_", " ")} plan? You'll be charged or credited the prorated difference immediately.`)) return;
+                              changePlanMutation.mutate({ plan });
+                            }}
+                          >
+                            {isCurrent
+                              ? `Current Plan — ${plan.replace("_", " ")}`
+                              : changePlanMutation.isPending ? "Updating..." : `Switch to ${plan.replace("_", " ")}`}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => portalMutation.mutate()} disabled={portalMutation.isPending}>
+                      {portalMutation.isPending ? "Loading..." : "Manage Payment Method / Cancel"}
+                    </Button>
+                  </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {(["starter", "fleet", "fleet_pro"] as const).map(plan => (

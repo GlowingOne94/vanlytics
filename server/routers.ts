@@ -980,6 +980,35 @@ export const appRouter = router({
         isGrandfathered: org?.isGrandfathered === "yes",
       };
     }),
+    changePlan: adminProcedure
+      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]) }))
+      .mutation(async ({ input, ctx }) => {
+        if (!stripe) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet." });
+        }
+        const org = await db.getOrganizationById(ctx.organizationId);
+        if (!org?.stripeSubscriptionId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No active subscription to change — subscribe to a plan first." });
+        }
+        const priceId = priceIdForPlan(input.plan as PlanTier);
+        if (!priceId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `No Stripe price configured for the ${input.plan} plan yet.` });
+        }
+        const subscription = await stripe.subscriptions.retrieve(org.stripeSubscriptionId);
+        const itemId = subscription.items.data[0]?.id;
+        if (!itemId) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Couldn't find your subscription's billing item." });
+        }
+        // Swaps the price on the existing subscription (with proration) rather
+        // than creating a new one. Stripe fires customer.subscription.updated
+        // for this automatically — our existing webhook handler already syncs
+        // planTier from that event, so no webhook changes are needed here.
+        await stripe.subscriptions.update(org.stripeSubscriptionId, {
+          items: [{ id: itemId, price: priceId }],
+          proration_behavior: "create_prorations",
+        });
+        return { success: true } as const;
+      }),
     createCheckoutSession: adminProcedure
       .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]) }))
       .mutation(async ({ input, ctx }) => {
