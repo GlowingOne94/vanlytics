@@ -3,9 +3,9 @@
 ## What this is
 
 This is a thin native Android/iOS wrapper around the Vanlytics **driver
-portal** web page (`https://<your-app-url>/driver/<org-slug>`), where drivers
-pick their name, enter their PIN, and clock in/out for the day (choosing a
-van and logging start/end mileage).
+portal** web page (`https://<your-app-url>/driver/<org-slug>`), where a
+driver enters their PIN and clocks in/out for the day (logging start/end
+mileage against the van they're already assigned to in Vanlytics).
 
 The app itself contains almost no logic. It's a single [Expo](https://expo.dev)
 project that:
@@ -21,10 +21,16 @@ project that:
 3. Persists cookies across app restarts so the driver's PIN-login session
    sticks, the same way it would in a normal mobile browser.
 
-All the actual driver-facing UI (name picker, PIN pad, van picker, mileage
-entry) lives in the main Vanlytics web app at the `/driver/:orgSlug` route —
-this app just gives it a real home-screen icon and an installable APK so
-drivers don't have to find a bookmark every morning.
+All the actual driver-facing UI (PIN pad, mileage entry) lives in the main
+Vanlytics web app at the `/driver/:orgSlug` route — this app just gives it a
+real home-screen icon and an installable APK so drivers don't have to find a
+bookmark every morning.
+
+Each phone identifies itself to that page automatically (a device ID stored
+in the WebView's local storage) — an admin links each phone to a driver from
+Vanlytics' Driver Abstracts → **Manage Devices**, so there's no driver list
+or van picker shown on the phone itself. See "First-time driver setup"
+below.
 
 Because it's "just" a WebView, **you do not need to rebuild or redistribute
 this app when the driver portal web page changes.** Backend changes, UI
@@ -85,6 +91,29 @@ which is what you want for side-loading directly onto driver phones.
 
 You only need to repeat this per phone once. You do **not** need to repeat
 it every time the web app changes — see above.
+
+### First-time driver setup (per phone)
+
+After the app is installed and pointed at your Vanlytics URL + org code:
+
+1. Open the app on the driver's phone. Since this phone hasn't been linked
+   to anyone yet, it shows a short device code (e.g. `AB12-CD34`) instead of
+   any driver's name.
+2. In Vanlytics (on your computer), go to **Driver Abstracts → Manage
+   Devices**. The phone shows up in that list within a few seconds of
+   opening the app (match it by the same code, or by "last seen just now").
+   Assign it to the correct driver from the dropdown.
+3. Still in Driver Abstracts, use **Set PIN** on that driver if you haven't
+   already, and tell the driver their 4-digit PIN directly (it isn't sent
+   automatically).
+4. Back on the phone, tap "Check again" — it now shows that driver's PIN pad.
+   Entering the PIN logs them in and shows their assigned van (from the
+   existing Vehicles assignment) so they can clock in.
+
+A driver only needs to be assigned once per phone — reopening the app later
+goes straight to the PIN pad. If a phone is lost, replaced, or handed to a
+different driver, just re-assign it (or unassign it) from Manage Devices;
+nothing on the phone itself needs to change.
 
 ### Changing the configured URL later
 
