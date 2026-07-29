@@ -1641,6 +1641,12 @@ export async function closeDriverShift(id: number, clockOutAt: Date, clockOutMil
   await db.update(driverShifts).set({ clockOutAt, clockOutMileage }).where(eq(driverShifts.id, id));
 }
 
+export async function deleteDriverShift(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(driverShifts).where(and(eq(driverShifts.id, id), eq(driverShifts.organizationId, organizationId)));
+}
+
 export async function getDriverShifts(organizationId: number, opts?: { startDate?: number; endDate?: number }) {
   const db = await getDb();
   if (!db) return [];

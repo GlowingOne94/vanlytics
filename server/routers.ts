@@ -1202,6 +1202,12 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getMileageAnalysis(ctx.organizationId, input);
       }),
+    deleteShift: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteDriverShift(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
   }),
 
   // ============ ALERTS ============
