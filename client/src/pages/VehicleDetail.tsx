@@ -15,7 +15,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
-import { ArrowLeft, Pencil, Save, Truck, X, Upload, Camera } from "lucide-react";
+import { ArrowLeft, Pencil, Save, Truck, X, Upload, Camera, Trash2 } from "lucide-react";
 import { useState, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
@@ -59,6 +59,15 @@ export default function VehicleDetail() {
       utils.vehicles.getById.invalidate({ id: vehicleId });
       setEditing(false);
       toast.success("Vehicle updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteMutation = trpc.vehicles.delete.useMutation({
+    onSuccess: () => {
+      utils.vehicles.list.invalidate();
+      toast.success("Vehicle deleted");
+      setLocation("/vehicles");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -218,6 +227,18 @@ export default function VehicleDetail() {
             <>
               <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
                 <X className="h-4 w-4 mr-1" /> Cancel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  if (!window.confirm(`Delete Van ${vehicle?.vanNumber}? This cannot be undone.`)) return;
+                  deleteMutation.mutate({ id: vehicleId });
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-1" /> Delete
               </Button>
               <Button size="sm" onClick={saveEdits} disabled={updateMutation.isPending}>
                 <Save className="h-4 w-4 mr-1" /> Save

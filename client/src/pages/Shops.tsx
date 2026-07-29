@@ -11,7 +11,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -21,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Search, Store, Phone, MapPin, Star } from "lucide-react";
+import { Plus, Search, Store, Phone, MapPin, Star, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +32,7 @@ const specialtyOptions = [
 export default function Shops() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const { data: shops, isLoading } = trpc.shops.list.useQuery();
   const { data: shopPerformance } = trpc.analytics.shopPerformance.useQuery();
   const utils = trpc.useUtils();
@@ -42,6 +42,26 @@ export default function Shops() {
       utils.shops.list.invalidate();
       setDialogOpen(false);
       toast.success("Shop added successfully");
+      resetForm();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updateMutation = trpc.shops.update.useMutation({
+    onSuccess: () => {
+      utils.shops.list.invalidate();
+      setDialogOpen(false);
+      toast.success("Shop updated");
+      resetForm();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteMutation = trpc.shops.delete.useMutation({
+    onSuccess: () => {
+      utils.shops.list.invalidate();
+      setDialogOpen(false);
+      toast.success("Shop deleted");
       resetForm();
     },
     onError: (err) => toast.error(err.message),
@@ -58,14 +78,37 @@ export default function Shops() {
     notes: "",
   });
 
-  const resetForm = () => setForm({
-    name: "", phone: "", address: "", contactPerson: "",
-    specialties: [], averageLaborRate: "", recommendation: "maybe", notes: "",
-  });
+  const resetForm = () => {
+    setEditingId(null);
+    setForm({
+      name: "", phone: "", address: "", contactPerson: "",
+      specialties: [], averageLaborRate: "", recommendation: "maybe", notes: "",
+    });
+  };
 
-  const handleCreate = () => {
+  const openAddShop = () => {
+    resetForm();
+    setDialogOpen(true);
+  };
+
+  const openEditShop = (shop: NonNullable<typeof shops>[number]) => {
+    setEditingId(shop.id);
+    setForm({
+      name: shop.name,
+      phone: shop.phone ?? "",
+      address: shop.address ?? "",
+      contactPerson: shop.contactPerson ?? "",
+      specialties: Array.isArray(shop.specialties) ? (shop.specialties as string[]) : [],
+      averageLaborRate: shop.averageLaborRate ?? "",
+      recommendation: (shop.recommendation as "yes" | "no" | "maybe") ?? "maybe",
+      notes: shop.notes ?? "",
+    });
+    setDialogOpen(true);
+  };
+
+  const handleSave = () => {
     if (!form.name) { toast.error("Shop name is required"); return; }
-    createMutation.mutate({
+    const payload = {
       name: form.name,
       phone: form.phone || undefined,
       address: form.address || undefined,
@@ -74,7 +117,18 @@ export default function Shops() {
       averageLaborRate: form.averageLaborRate || undefined,
       recommendation: form.recommendation,
       notes: form.notes || undefined,
-    });
+    };
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, ...payload });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!editingId) return;
+    if (!window.confirm(`Delete ${form.name}? This can't be undone.`)) return;
+    deleteMutation.mutate({ id: editingId });
   };
 
   const toggleSpecialty = (s: string) => {
@@ -106,12 +160,10 @@ export default function Shops() {
           <h1 className="text-2xl font-bold tracking-tight">Shop Directory</h1>
           <p className="text-muted-foreground text-sm mt-1">{shops?.length ?? 0} shops tracked</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm"><Plus className="h-4 w-4 mr-1" /> Add Shop</Button>
-          </DialogTrigger>
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+          <Button size="sm" onClick={openAddShop}><Plus className="h-4 w-4 mr-1" /> Add Shop</Button>
           <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>Add New Shop</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editingId ? "Edit Shop" : "Add New Shop"}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
               <div>
                 <Label>Name *</Label>
@@ -161,9 +213,21 @@ export default function Shops() {
                 <Label>Notes</Label>
                 <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
-              <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Saving..." : "Add Shop"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} className="flex-1">
+                  {createMutation.isPending || updateMutation.isPending ? "Saving..." : editingId ? "Save Changes" : "Add Shop"}
+                </Button>
+                {editingId && (
+                  <Button
+                    variant="outline"
+                    className="text-destructive hover:bg-destructive/10"
+                    onClick={handleDelete}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" /> Delete
+                  </Button>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -195,11 +259,16 @@ export default function Shops() {
                       )}
                     </div>
                   </div>
-                  {shop.recommendation && (
-                    <Badge variant="outline" className={recommendationColors[shop.recommendation]}>
-                      {shop.recommendation === "yes" ? "Recommended" : shop.recommendation === "no" ? "Not Recommended" : "Maybe"}
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {shop.recommendation && (
+                      <Badge variant="outline" className={recommendationColors[shop.recommendation]}>
+                        {shop.recommendation === "yes" ? "Recommended" : shop.recommendation === "no" ? "Not Recommended" : "Maybe"}
+                      </Badge>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => openEditShop(shop)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="mt-3 space-y-1.5">
                   {shop.phone && (

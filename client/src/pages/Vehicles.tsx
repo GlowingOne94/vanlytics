@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter, Plus, Search, Trash2, Truck } from "lucide-react";
+import { Filter, Plus, Search, Truck } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -54,19 +54,6 @@ export default function Vehicles() {
     },
     onError: (err) => toast.error(err.message),
   });
-  const deleteMutation = trpc.vehicles.delete.useMutation({
-    onSuccess: () => {
-      utils.vehicles.list.invalidate();
-      toast.success("Vehicle deleted");
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const handleDelete = (e: React.MouseEvent, id: number, vanNumber: string) => {
-    e.stopPropagation();
-    if (!window.confirm(`Delete Van ${vanNumber}? This cannot be undone.`)) return;
-    deleteMutation.mutate({ id });
-  };
 
   const [form, setForm] = useState({
     vanNumber: "",
@@ -299,15 +286,6 @@ export default function Vehicles() {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className={`h-3 w-3 rounded-full ${healthColors[vehicle.healthScore]}`} />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => handleDelete(e, vehicle.id, vehicle.vanNumber)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
