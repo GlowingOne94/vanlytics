@@ -21,6 +21,9 @@ import {
   routeImports, RouteImport, InsertRouteImport,
   trips, Trip, InsertTrip,
   tripStatusEvents, TripStatusEvent, InsertTripStatusEvent,
+  driverPairingCodes, DriverPairingCode, InsertDriverPairingCode,
+  driverDevices, DriverDevice, InsertDriverDevice,
+  driverShifts, DriverShift, InsertDriverShift,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -472,6 +475,13 @@ export async function getDrivers(organizationId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(drivers).where(eq(drivers.organizationId, organizationId)).orderBy(drivers.name);
+}
+
+export async function getDriverById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(drivers).where(eq(drivers.id, id)).limit(1);
+  return result[0];
 }
 
 export async function createDriver(organizationId: number, data: Omit<InsertDriver, "organizationId">) {
@@ -1517,4 +1527,159 @@ export async function getEligibleVehiclesForTrip(organizationId: number, trip: T
     if (v.registrationExpiry && v.registrationExpiry < Date.now()) reasons.push("Registration expired");
     return { vehicle: v, eligible: reasons.length === 0, reasons };
   });
+}
+
+// ============ DRIVER MOBILE APP HELPERS ============
+
+export async function setDriverPin(organizationId: number, driverId: number, pinHash: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(drivers).set({ pinHash }).where(and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId)));
+}
+
+export async function createPairingCode(organizationId: number, driverId: number, code: string, expiresAt: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(driverPairingCodes).values({ organizationId, driverId, code, expiresAt });
+  return { id: result[0].insertId };
+}
+
+export async function getPairingCodeByCode(code: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(driverPairingCodes).where(eq(driverPairingCodes.code, code)).limit(1);
+  return result[0];
+}
+
+export async function markPairingCodeUsed(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(driverPairingCodes).set({ usedAt: new Date() }).where(eq(driverPairingCodes.id, id));
+}
+
+export async function createDriverDevice(data: InsertDriverDevice): Promise<DriverDevice> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(driverDevices).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(driverDevices).where(eq(driverDevices.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getDriverDeviceByDeviceId(deviceId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(driverDevices)
+    .where(and(eq(driverDevices.deviceId, deviceId), sql`${driverDevices.revokedAt} is null`))
+    .limit(1);
+  return result[0];
+}
+
+export async function touchDriverDeviceLastSeen(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(driverDevices).set({ lastSeenAt: new Date() }).where(eq(driverDevices.id, id));
+}
+
+export async function getDriverDevicesForDriver(organizationId: number, driverId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(driverDevices)
+    .where(and(eq(driverDevices.organizationId, organizationId), eq(driverDevices.driverId, driverId), sql`${driverDevices.revokedAt} is null`));
+}
+
+export async function revokeDriverDevice(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(driverDevices).set({ revokedAt: new Date() }).where(and(eq(driverDevices.id, id), eq(driverDevices.organizationId, organizationId)));
+}
+
+export async function getOpenShiftForDriver(organizationId: number, driverId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(driverShifts)
+    .where(and(eq(driverShifts.organizationId, organizationId), eq(driverShifts.driverId, driverId), sql`${driverShifts.clockOutAt} is null`))
+    .orderBy(desc(driverShifts.clockInAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function createDriverShift(data: InsertDriverShift): Promise<DriverShift> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(driverShifts).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(driverShifts).where(eq(driverShifts.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function closeDriverShift(id: number, clockOutAt: Date, clockOutMileage: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(driverShifts).set({ clockOutAt, clockOutMileage }).where(eq(driverShifts.id, id));
+}
+
+export async function getDriverShifts(organizationId: number, opts?: { startDate?: number; endDate?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(driverShifts.organizationId, organizationId)];
+  if (opts?.startDate) conditions.push(gte(driverShifts.clockInAt, new Date(opts.startDate)));
+  if (opts?.endDate) conditions.push(lte(driverShifts.clockInAt, new Date(opts.endDate)));
+  return db.select().from(driverShifts).where(and(...conditions)).orderBy(desc(driverShifts.clockInAt));
+}
+
+export async function getMileageAnalysis(organizationId: number, opts?: { startDate?: number; endDate?: number }) {
+  const shifts = await getDriverShifts(organizationId, opts);
+  const completedShifts = shifts.filter(s => s.clockOutAt && s.clockOutMileage != null);
+
+  const allVehicles = await getVehicles(organizationId);
+  const allDrivers = await getDrivers(organizationId);
+
+  const byVehicleMap = new Map<number, { totalMiles: number; shiftCount: number }>();
+  const byDriverMap = new Map<number, { totalHours: number; shiftCount: number }>();
+
+  for (const s of completedShifts) {
+    const miles = s.clockOutMileage! - s.clockInMileage;
+    const hours = (new Date(s.clockOutAt!).getTime() - new Date(s.clockInAt).getTime()) / (1000 * 60 * 60);
+
+    const vEntry = byVehicleMap.get(s.vehicleId) ?? { totalMiles: 0, shiftCount: 0 };
+    vEntry.totalMiles += miles;
+    vEntry.shiftCount += 1;
+    byVehicleMap.set(s.vehicleId, vEntry);
+
+    const dEntry = byDriverMap.get(s.driverId) ?? { totalHours: 0, shiftCount: 0 };
+    dEntry.totalHours += hours;
+    dEntry.shiftCount += 1;
+    byDriverMap.set(s.driverId, dEntry);
+  }
+
+  const byVehicle = Array.from(byVehicleMap.entries()).map(([vehicleId, data]) => ({
+    vehicleId,
+    vanNumber: allVehicles.find(v => v.id === vehicleId)?.vanNumber ?? "Unknown",
+    totalMiles: data.totalMiles,
+    shiftCount: data.shiftCount,
+  })).sort((a, b) => b.totalMiles - a.totalMiles);
+
+  const byDriver = Array.from(byDriverMap.entries()).map(([driverId, data]) => ({
+    driverId,
+    driverName: allDrivers.find(d => d.id === driverId)?.name ?? "Unknown",
+    totalHours: Math.round(data.totalHours * 100) / 100,
+    shiftCount: data.shiftCount,
+  })).sort((a, b) => b.totalHours - a.totalHours);
+
+  const detail = shifts.map(s => ({
+    id: s.id,
+    driverName: allDrivers.find(d => d.id === s.driverId)?.name ?? "Unknown",
+    vanNumber: allVehicles.find(v => v.id === s.vehicleId)?.vanNumber ?? "Unknown",
+    clockInAt: s.clockInAt,
+    clockInMileage: s.clockInMileage,
+    clockOutAt: s.clockOutAt,
+    clockOutMileage: s.clockOutMileage,
+    milesDriven: s.clockOutMileage != null ? s.clockOutMileage - s.clockInMileage : null,
+    hoursWorked: s.clockOutAt
+      ? Math.round(((new Date(s.clockOutAt).getTime() - new Date(s.clockInAt).getTime()) / (1000 * 60 * 60)) * 100) / 100
+      : null,
+  }));
+
+  return { byVehicle, byDriver, detail };
 }

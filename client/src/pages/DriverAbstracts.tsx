@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink, Download } from "lucide-react";
+import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink, Download, Smartphone } from "lucide-react";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { useState, useRef } from "react";
@@ -197,6 +197,37 @@ export default function DriverAbstracts() {
 
   // Document library browser
   const [docsTarget, setDocsTarget] = useState<{ driverId: number; driverName: string } | null>(null);
+
+  // Mobile app access (PIN + pairing codes)
+  const [mobileTarget, setMobileTarget] = useState<{ driverId: number; driverName: string } | null>(null);
+  const [newPin, setNewPin] = useState("");
+  const [generatedCode, setGeneratedCode] = useState<{ code: string; expiresAt: number } | null>(null);
+  const { data: driverDevices } = trpc.driverMobile.listDevices.useQuery(
+    { driverId: mobileTarget?.driverId ?? 0 },
+    { enabled: Boolean(mobileTarget) }
+  );
+
+  const setPinMutation = trpc.driverMobile.setPin.useMutation({
+    onSuccess: () => { toast.success("PIN saved"); setNewPin(""); },
+    onError: (err) => toast.error(err.message),
+  });
+  const generateCodeMutation = trpc.driverMobile.generatePairingCode.useMutation({
+    onSuccess: (result) => setGeneratedCode({ code: result.code, expiresAt: new Date(result.expiresAt).getTime() }),
+    onError: (err) => toast.error(err.message),
+  });
+  const revokeDeviceMutation = trpc.driverMobile.revokeDevice.useMutation({
+    onSuccess: () => {
+      utils.driverMobile.listDevices.invalidate({ driverId: mobileTarget?.driverId ?? 0 });
+      toast.success("Device access revoked");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const openMobileAccess = (driverId: number, driverName: string) => {
+    setMobileTarget({ driverId, driverName });
+    setNewPin("");
+    setGeneratedCode(null);
+  };
   const { data: driverDocs } = trpc.driverDocuments.list.useQuery(
     { driverId: docsTarget?.driverId },
     { enabled: Boolean(docsTarget) }
@@ -471,6 +502,12 @@ export default function DriverAbstracts() {
                       onClick={() => openDocsBrowser(driver.id, driver.name)}
                     >
                       <FolderOpen className="h-3.5 w-3.5 mr-1" /> Documents
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" className="h-8 px-2 text-xs"
+                      onClick={() => openMobileAccess(driver.id, driver.name)}
+                    >
+                      <Smartphone className="h-3.5 w-3.5 mr-1" /> Mobile Access
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDriver(driver)}>
                       <Pencil className="h-3.5 w-3.5" />
@@ -787,6 +824,82 @@ export default function DriverAbstracts() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mobile app access — PIN + pairing codes + paired devices */}
+      <Dialog open={Boolean(mobileTarget)} onOpenChange={(open) => { if (!open) setMobileTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{mobileTarget ? `Mobile Access — ${mobileTarget.driverName}` : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            <div>
+              <Label className="text-sm">Set / Change PIN</Label>
+              <p className="text-xs text-muted-foreground mb-2">4-8 digits. The driver uses this to log into the mobile app.</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  placeholder="e.g. 4821"
+                  className="w-32"
+                />
+                <Button
+                  size="sm"
+                  disabled={newPin.length < 4 || setPinMutation.isPending}
+                  onClick={() => mobileTarget && setPinMutation.mutate({ driverId: mobileTarget.driverId, pin: newPin })}
+                >
+                  {setPinMutation.isPending ? "Saving..." : "Save PIN"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t">
+              <Label className="text-sm">Pair a New Device</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Generates a one-time code (valid 30 minutes). Have the driver open the app and enter it to link their phone.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={generateCodeMutation.isPending}
+                onClick={() => mobileTarget && generateCodeMutation.mutate({ driverId: mobileTarget.driverId })}
+              >
+                {generateCodeMutation.isPending ? "Generating..." : "Generate Pairing Code"}
+              </Button>
+              {generatedCode && (
+                <div className="mt-3 p-3 rounded-md border bg-muted/30 text-center">
+                  <p className="text-2xl font-bold tracking-widest">{generatedCode.code}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Expires {new Date(generatedCode.expiresAt).toLocaleTimeString()}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t">
+              <Label className="text-sm">Paired Devices</Label>
+              <div className="space-y-1.5 mt-2">
+                {!driverDevices || driverDevices.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No devices paired yet.</p>
+                ) : (
+                  driverDevices.map((device) => (
+                    <div key={device.id} className="flex items-center justify-between text-xs p-2 rounded-md border">
+                      <span className="text-muted-foreground">
+                        Paired {new Date(device.pairedAt).toLocaleDateString()} · Last used {new Date(device.lastSeenAt).toLocaleDateString()}
+                      </span>
+                      <Button
+                        variant="ghost" size="sm" className="h-6 px-2 text-xs text-destructive"
+                        onClick={() => revokeDeviceMutation.mutate({ id: device.id })}
+                      >
+                        Revoke
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </DialogContent>

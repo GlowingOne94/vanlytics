@@ -317,6 +317,9 @@ export const drivers = mysqlTable("drivers", {
   cdlExpiry: bigint("cdlExpiry", { mode: "number" }),
   cdlDocumentUrl: text("cdlDocumentUrl"),
   cdlDocumentKey: varchar("cdlDocumentKey", { length: 255 }),
+  // Hashed PIN for the driver mobile app — set by an admin, never shown/stored
+  // in plaintext. Null until an admin sets one for this driver.
+  pinHash: varchar("pinHash", { length: 255 }),
   wheelchairQualified: mysqlEnum("wheelchairQualified", ["yes", "no"]).default("yes").notNull(),
   twoPersonAssist: mysqlEnum("twoPersonAssist", ["yes", "no"]).default("no").notNull(),
   notes: text("notes"),
@@ -475,3 +478,65 @@ export const tripStatusEvents = mysqlTable("trip_status_events", {
 
 export type TripStatusEvent = typeof tripStatusEvents.$inferSelect;
 export type InsertTripStatusEvent = typeof tripStatusEvents.$inferInsert;
+
+/* ============================================================
+ * DRIVER MOBILE APP — device pairing, clock-in/out, mileage
+ * ============================================================
+ */
+
+/**
+ * Driver Pairing Codes - short-lived, single-use codes an admin generates
+ * for a specific driver, which the driver enters on first app launch to
+ * securely bind that physical device to their record.
+ */
+export const driverPairingCodes = mysqlTable("driver_pairing_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull(),
+  code: varchar("code", { length: 10 }).notNull().unique(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  usedAt: timestamp("usedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DriverPairingCode = typeof driverPairingCodes.$inferSelect;
+export type InsertDriverPairingCode = typeof driverPairingCodes.$inferInsert;
+
+/**
+ * Driver Devices - the actual device-to-driver binding, created once a
+ * pairing code is redeemed. deviceId is a UUID the app generates and
+ * stores locally on first launch.
+ */
+export const driverDevices = mysqlTable("driver_devices", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull(),
+  deviceId: varchar("deviceId", { length: 100 }).notNull().unique(),
+  pairedAt: timestamp("pairedAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  revokedAt: timestamp("revokedAt"),
+});
+
+export type DriverDevice = typeof driverDevices.$inferSelect;
+export type InsertDriverDevice = typeof driverDevices.$inferInsert;
+
+/**
+ * Driver Shifts - one row per clock-in/clock-out cycle, capturing which
+ * van was used and the odometer reading at each end. This is what backs
+ * the Mileage Analysis tab (miles per van, hours per driver).
+ */
+export const driverShifts = mysqlTable("driver_shifts", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull(),
+  vehicleId: int("vehicleId").notNull(),
+  deviceId: varchar("deviceId", { length: 100 }),
+  clockInAt: timestamp("clockInAt").notNull(),
+  clockInMileage: int("clockInMileage").notNull(),
+  clockOutAt: timestamp("clockOutAt"),
+  clockOutMileage: int("clockOutMileage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DriverShift = typeof driverShifts.$inferSelect;
+export type InsertDriverShift = typeof driverShifts.$inferInsert;

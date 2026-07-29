@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, orgProcedure, adminProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken } from "./_core/tokens";
@@ -1082,6 +1083,45 @@ export const appRouter = router({
         currentCount,
       };
     }),
+  }),
+
+  // ============ DRIVER MOBILE APP (admin-side) ============
+  driverMobile: router({
+    setPin: adminProcedure
+      .input(z.object({ driverId: z.number(), pin: z.string().min(4).max(8).regex(/^\d+$/, "PIN must be numbers only") }))
+      .mutation(async ({ input, ctx }) => {
+        const pinHash = await bcrypt.hash(input.pin, 12);
+        await db.setDriverPin(ctx.organizationId, input.driverId, pinHash);
+        return { success: true } as const;
+      }),
+    generatePairingCode: adminProcedure
+      .input(z.object({ driverId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+        await db.createPairingCode(ctx.organizationId, input.driverId, code, expiresAt);
+        return { code, expiresAt } as const;
+      }),
+    listDevices: orgProcedure
+      .input(z.object({ driverId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        return db.getDriverDevicesForDriver(ctx.organizationId, input.driverId);
+      }),
+    revokeDevice: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.revokeDriverDevice(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+  }),
+
+  // ============ MILEAGE ANALYSIS ============
+  mileageAnalysis: router({
+    get: orgProcedure
+      .input(z.object({ startDate: z.number().optional(), endDate: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        return db.getMileageAnalysis(ctx.organizationId, input);
+      }),
   }),
 
   // ============ ALERTS ============
