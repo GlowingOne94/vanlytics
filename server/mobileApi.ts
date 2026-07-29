@@ -164,12 +164,24 @@ export function registerMobileApi(app: Express) {
 
   // ---- List active vehicles, for the van-selection screen ----
   app.get("/api/mobile/vehicles", requireMobileAuth, async (req: Request, res: Response) => {
-    const { organizationId } = (req as any).mobileAuth as MobileTokenPayload;
-    const vehicles = await db.getVehicles(organizationId);
+    const { driverId, organizationId } = (req as any).mobileAuth as MobileTokenPayload;
+    const [vehicles, driver] = await Promise.all([
+      db.getVehicles(organizationId),
+      db.getDriverById(driverId),
+    ]);
+    const activeVehicles = vehicles.filter(v => v.status === "active");
+
+    // Match against the "Assigned Driver" field set in the Fleet section —
+    // it's stored as the driver's name, so a case/whitespace-insensitive
+    // comparison keeps this reliable without needing a stricter data model.
+    const normalize = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+    const assigned = driver
+      ? activeVehicles.find(v => normalize(v.assignedDriver) === normalize(driver.name))
+      : undefined;
+
     res.json({
-      vehicles: vehicles
-        .filter(v => v.status === "active")
-        .map(v => ({ id: v.id, vanNumber: v.vanNumber, mileage: v.mileage })),
+      vehicles: activeVehicles.map(v => ({ id: v.id, vanNumber: v.vanNumber, mileage: v.mileage })),
+      assignedVehicleId: assigned?.id ?? null,
     });
   });
 
