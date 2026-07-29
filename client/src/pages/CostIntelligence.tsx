@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DollarSign, TrendingUp, Truck, BarChart3 } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 // Recharts' default tooltip box is always white/light — without this, dark
@@ -14,6 +15,8 @@ const tooltipStyle = {
 };
 
 export default function CostIntelligence() {
+  const { theme } = useTheme();
+  const dotColor = theme === "dark" ? "#fff" : "#000";
   const { data: monthlySpending, isLoading: loadingMonthly } = trpc.analytics.monthlySpending.useQuery({ months: 12 });
   const { data: costByVehicle, isLoading: loadingVehicle } = trpc.analytics.costByVehicle.useQuery();
   const { data: costByCategory, isLoading: loadingCategory } = trpc.analytics.costByCategory.useQuery();
@@ -77,7 +80,7 @@ export default function CostIntelligence() {
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
                 <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]} {...tooltipStyle} />
-                <Line type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4, fill: dotColor }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (

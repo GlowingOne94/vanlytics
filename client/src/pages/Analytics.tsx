@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart3, Download, TrendingUp, DollarSign, Activity } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
@@ -20,6 +21,8 @@ const tooltipStyle = {
 };
 
 export default function Analytics() {
+  const { theme } = useTheme();
+  const dotColor = theme === "dark" ? "#fff" : "#000";
   const { data: monthlySpending, isLoading: loadingMonthly } = trpc.analytics.monthlySpending.useQuery({ months: 12 });
   const { data: costByVehicle } = trpc.analytics.costByVehicle.useQuery();
   const { data: costByCategory } = trpc.analytics.costByCategory.useQuery();
@@ -147,7 +150,7 @@ export default function Analytics() {
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(value: number) => [`${value} repairs`, "Count"]} {...tooltipStyle} />
-                <Line type="monotone" dataKey="count" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="count" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4, fill: dotColor }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
