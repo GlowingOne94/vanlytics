@@ -349,6 +349,23 @@ export const appRouter = router({
             severity: w.type === "warranty_active" ? "critical" : "warning",
           });
         }
+
+        // A repair logged under "DOT Inspection" also creates a matching
+        // entry in the DOT Inspections history, so it only needs entering once.
+        if (input.category === "DOT Inspection") {
+          const expiryDate = new Date(input.date);
+          expiryDate.setMonth(expiryDate.getMonth() + 6);
+          await db.createDotInspection(orgId, {
+            vehicleId: input.vehicleId,
+            inspectionDate: input.date,
+            expiryDate: expiryDate.getTime(),
+            mileageAtInspection: input.mileage,
+            inspector: input.mechanic,
+            notes: input.notes,
+            sourceRepairId: result.id,
+          });
+        }
+
         return { ...result, warnings };
       }),
     update: orgProcedure
@@ -375,7 +392,41 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
-        await db.updateRepair(ctx.organizationId, id, data);
+        const orgId = ctx.organizationId;
+        const existingRepair = await db.getRepairById(orgId, id);
+        await db.updateRepair(orgId, id, data);
+
+        const effectiveCategory = data.category ?? existingRepair?.category;
+        if (effectiveCategory === "DOT Inspection" && existingRepair) {
+          const effectiveDate = data.date ?? existingRepair.date;
+          const effectiveMileage = data.mileage ?? existingRepair.mileage ?? undefined;
+          const effectiveMechanic = data.mechanic ?? existingRepair.mechanic ?? undefined;
+          const effectiveNotes = data.notes ?? existingRepair.notes ?? undefined;
+          const expiryDate = new Date(effectiveDate);
+          expiryDate.setMonth(expiryDate.getMonth() + 6);
+
+          const linked = await db.getDotInspectionBySourceRepairId(orgId, id);
+          if (linked) {
+            await db.updateDotInspection(orgId, linked.id, {
+              inspectionDate: effectiveDate,
+              expiryDate: expiryDate.getTime(),
+              mileageAtInspection: effectiveMileage,
+              inspector: effectiveMechanic,
+              notes: effectiveNotes,
+            });
+          } else {
+            await db.createDotInspection(orgId, {
+              vehicleId: existingRepair.vehicleId,
+              inspectionDate: effectiveDate,
+              expiryDate: expiryDate.getTime(),
+              mileageAtInspection: effectiveMileage,
+              inspector: effectiveMechanic,
+              notes: effectiveNotes,
+              sourceRepairId: id,
+            });
+          }
+        }
+
         return { success: true };
       }),
     delete: orgProcedure

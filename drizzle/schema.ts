@@ -300,6 +300,10 @@ export const dotInspections = mysqlTable("dot_inspections", {
   inspector: varchar("inspector", { length: 100 }),
   documentUrl: text("documentUrl"),
   documentKey: varchar("documentKey", { length: 255 }),
+  // Set when this inspection was auto-created from a repair logged with
+  // category "DOT Inspection" — lets later edits to that repair keep this
+  // record in sync instead of creating duplicates.
+  sourceRepairId: int("sourceRepairId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

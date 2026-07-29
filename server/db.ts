@@ -482,6 +482,15 @@ export async function updateDotInspection(organizationId: number, id: number, da
   await db.update(dotInspections).set(data).where(and(eq(dotInspections.id, id), eq(dotInspections.organizationId, organizationId)));
 }
 
+export async function getDotInspectionBySourceRepairId(organizationId: number, repairId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(dotInspections)
+    .where(and(eq(dotInspections.organizationId, organizationId), eq(dotInspections.sourceRepairId, repairId)))
+    .limit(1);
+  return result[0];
+}
+
 // ============ DRIVER HELPERS ============
 
 export async function getDrivers(organizationId: number) {
