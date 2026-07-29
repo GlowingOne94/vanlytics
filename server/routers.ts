@@ -809,11 +809,11 @@ export const appRouter = router({
   }),
 
   // ============ DRIVER MOBILE PORTAL (clock in/out + mileage) ============
-  // PIN-based auth, entirely separate from the office login above — see
-  // server/driverAuth.ts. The "who are you" screen is intentionally public
-  // (anyone with the org's portal link can see driver first names, same as
-  // a physical time clock would), but every action beyond that requires the
-  // correct PIN and is scoped to that one driver's own record.
+  // Device + PIN auth, entirely separate from the office login above — see
+  // server/driverAuth.ts. There is no "pick your name" screen: the portal
+  // link only ever shows a device its own bound driver's own name (never a
+  // roster of other drivers), and the van is resolved automatically from
+  // the existing vehicle → driver assignment instead of a picker.
   driverPortal: router({
     getOrgBySlug: publicProcedure
       .input(z.object({ slug: z.string().min(1) }))
@@ -822,15 +822,27 @@ export const appRouter = router({
         if (!org) return null;
         return { id: org.id, name: org.name };
       }),
-    listDrivers: publicProcedure
-      .input(z.object({ organizationId: z.number() }))
-      .query(async ({ input }) => {
-        return db.getPortalDrivers(input.organizationId);
+    // Called on every portal load when there's no active session. Records
+    // that this device has been seen (an admin can then bind it to a driver
+    // from Driver Abstracts) and reveals nothing beyond whether it's bound
+    // yet and — only once bound — the name of the one driver it belongs to.
+    registerDevice: publicProcedure
+      .input(z.object({ organizationId: z.number(), deviceId: z.string().min(8).max(100) }))
+      .mutation(async ({ input }) => {
+        const device = await db.touchOrCreateDriverDevice(input.organizationId, input.deviceId);
+        if (!device.driverId) return { assigned: false } as const;
+        const driver = await db.getDriverForPortalLogin(input.organizationId, device.driverId);
+        if (!driver) return { assigned: false } as const;
+        return { assigned: true, driverName: driver.name, hasPin: Boolean(driver.driverPinHash) } as const;
       }),
     login: publicProcedure
-      .input(z.object({ organizationId: z.number(), driverId: z.number(), pin: z.string().min(1) }))
+      .input(z.object({ organizationId: z.number(), deviceId: z.string().min(8).max(100), pin: z.string().min(1) }))
       .mutation(async ({ input, ctx }) => {
-        const driver = await db.getDriverForPortalLogin(input.organizationId, input.driverId);
+        const device = await db.getDriverDeviceForLogin(input.organizationId, input.deviceId);
+        if (!device || !device.driverId) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "This device hasn't been assigned to a driver yet." });
+        }
+        const driver = await db.getDriverForPortalLogin(input.organizationId, device.driverId);
         if (!driver || !driver.driverPinHash) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect PIN." });
         }
@@ -851,11 +863,14 @@ export const appRouter = router({
       if (!ctx.driver) return null;
       return { id: ctx.driver.id, name: ctx.driver.name, organizationId: ctx.driver.organizationId };
     }),
-    activeVehicles: driverProcedure.query(async ({ ctx }) => {
-      const vehicles = await db.getVehicles(ctx.driver.organizationId);
-      return vehicles
-        .filter(v => v.status !== "retired")
-        .map(v => ({ id: v.id, vanNumber: v.vanNumber, mileage: v.mileage }));
+    // Read-only — the van this driver is assigned to, from the same
+    // assignment admins set on the Vehicles/Vehicle Detail pages. Never a
+    // picker: if nothing's assigned, the driver is told to contact dispatch
+    // rather than being able to choose any van themselves.
+    myAssignedVehicle: driverProcedure.query(async ({ ctx }) => {
+      const vehicle = await db.getVehicleAssignedToDriver(ctx.driver.organizationId, ctx.driver.name);
+      if (!vehicle) return null;
+      return { id: vehicle.id, vanNumber: vehicle.vanNumber, mileage: vehicle.mileage };
     }),
     myOpenShift: driverProcedure.query(async ({ ctx }) => {
       const shift = await db.getOpenShiftForDriver(ctx.driver.organizationId, ctx.driver.id);
@@ -864,23 +879,23 @@ export const appRouter = router({
       return { ...shift, vanNumber: vehicle?.vanNumber ?? "Unknown" };
     }),
     clockIn: driverProcedure
-      .input(z.object({ vehicleId: z.number(), startMileage: z.number().min(0) }))
+      .input(z.object({ startMileage: z.number().min(0) }))
       .mutation(async ({ input, ctx }) => {
         const existing = await db.getOpenShiftForDriver(ctx.driver.organizationId, ctx.driver.id);
         if (existing) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "You're already clocked in — clock out first." });
         }
-        const vehicle = await db.getVehicleById(ctx.driver.organizationId, input.vehicleId);
+        const vehicle = await db.getVehicleAssignedToDriver(ctx.driver.organizationId, ctx.driver.name);
         if (!vehicle) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Van not found." });
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No van is assigned to you yet — contact dispatch." });
         }
         const result = await db.createDriverShift(ctx.driver.organizationId, {
           driverId: ctx.driver.id,
-          vehicleId: input.vehicleId,
+          vehicleId: vehicle.id,
           startMileage: input.startMileage,
           clockInAt: new Date(),
         });
-        return { id: result.id } as const;
+        return { id: result.id, vanNumber: vehicle.vanNumber } as const;
       }),
     clockOut: driverProcedure
       .input(z.object({ shiftId: z.number(), endMileage: z.number().min(0) }))
@@ -906,6 +921,25 @@ export const appRouter = router({
           await db.updateVehicle(ctx.driver.organizationId, vehicle.id, { mileage: input.endMileage });
         }
         return { success: true, milesDriven: input.endMileage - shift.startMileage } as const;
+      }),
+  }),
+
+  // ============ DRIVER DEVICES (admin: bind a phone to a driver) ============
+  driverDevices: router({
+    list: adminProcedure.query(async ({ ctx }) => {
+      return db.getDriverDevices(ctx.organizationId);
+    }),
+    assign: adminProcedure
+      .input(z.object({ id: z.number(), driverId: z.number().nullable() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.assignDriverDevice(ctx.organizationId, input.id, input.driverId);
+        return { success: true } as const;
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteDriverDevice(ctx.organizationId, input.id);
+        return { success: true } as const;
       }),
   }),
 

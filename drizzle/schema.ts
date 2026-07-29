@@ -509,3 +509,25 @@ export const driverShifts = mysqlTable("driver_shifts", {
 
 export type DriverShift = typeof driverShifts.$inferSelect;
 export type InsertDriverShift = typeof driverShifts.$inferInsert;
+
+/**
+ * Driver Devices - binds a phone to a driver so the mobile portal never
+ * needs to show a driver picker. A device "checks in" (creating a row with
+ * driverId null) the first time its portal link is opened; an admin then
+ * assigns it to a driver from the Driver Abstracts page. Reassignable at
+ * any time (e.g. a phone is replaced or handed to a different driver).
+ */
+export const driverDevices = mysqlTable("driver_devices", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  // Client-generated (localStorage), scoped per-org so the same phone
+  // visiting two different orgs' portals doesn't collide.
+  deviceId: varchar("deviceId", { length: 100 }).notNull(),
+  driverId: int("driverId"),
+  label: varchar("label", { length: 100 }),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DriverDevice = typeof driverDevices.$inferSelect;
+export type InsertDriverDevice = typeof driverDevices.$inferInsert;

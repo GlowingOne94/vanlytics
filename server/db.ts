@@ -1,4 +1,4 @@
-import { and, desc, eq, getTableColumns, gte, isNotNull, like, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gte, like, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   alerts, Alert, InsertAlert,
@@ -19,6 +19,7 @@ import {
   driverAbstracts, DriverAbstract, InsertDriverAbstract,
   driverDocuments, DriverDocument, InsertDriverDocument,
   driverShifts, DriverShift, InsertDriverShift,
+  driverDevices, DriverDevice, InsertDriverDevice,
   routeImports, RouteImport, InsertRouteImport,
   trips, Trip, InsertTrip,
   tripStatusEvents, TripStatusEvent, InsertTripStatusEvent,
@@ -638,23 +639,6 @@ export async function clearDriverPin(organizationId: number, driverId: number) {
     .where(and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId)));
 }
 
-// Drivers who can use the mobile portal — active status and a PIN already
-// set. Used to populate the "who are you" screen on the driver portal, so
-// only exposes id/name (no license/DOB/SSN or other admin-only fields).
-export async function getPortalDrivers(organizationId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  const rows = await db.select({ id: drivers.id, name: drivers.name })
-    .from(drivers)
-    .where(and(
-      eq(drivers.organizationId, organizationId),
-      eq(drivers.status, "active"),
-      isNotNull(drivers.driverPinHash),
-    ))
-    .orderBy(drivers.name);
-  return rows;
-}
-
 export async function getDriverForPortalLogin(organizationId: number, driverId: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -662,6 +646,81 @@ export async function getDriverForPortalLogin(organizationId: number, driverId: 
     .where(and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId), eq(drivers.status, "active")))
     .limit(1);
   return result[0];
+}
+
+// The van currently assigned to a driver, using the same assignment the
+// Vehicles/Vehicle Detail pages already write (vehicles.assignedDriver is
+// the driver's name string, set from a picker backed by the drivers list —
+// there's no separate driverId column on vehicles). Retired vans are
+// excluded since they shouldn't be driven regardless of what's on file.
+export async function getVehicleAssignedToDriver(organizationId: number, driverName: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(vehicles)
+    .where(and(
+      eq(vehicles.organizationId, organizationId),
+      eq(vehicles.assignedDriver, driverName),
+      or(eq(vehicles.status, "active"), eq(vehicles.status, "down"), eq(vehicles.status, "awaiting_parts"), eq(vehicles.status, "at_shop")),
+    ))
+    .limit(1);
+  return result[0];
+}
+
+// ============ DRIVER DEVICE HELPERS (portal device binding) ============
+
+// Called every time the portal loads without an active session. Creates an
+// unassigned row the first time a device is seen, otherwise just bumps
+// lastSeenAt — so the Devices admin UI can tell a driver "yes I opened the
+// link" apart from a device nobody has touched yet.
+export async function touchOrCreateDriverDevice(organizationId: number, deviceId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(driverDevices)
+    .where(and(eq(driverDevices.organizationId, organizationId), eq(driverDevices.deviceId, deviceId)))
+    .limit(1);
+  if (existing[0]) {
+    await db.update(driverDevices).set({ lastSeenAt: new Date() }).where(eq(driverDevices.id, existing[0].id));
+    return { ...existing[0], lastSeenAt: new Date() };
+  }
+  const result = await db.insert(driverDevices).values({ organizationId, deviceId, driverId: null });
+  const rows = await db.select().from(driverDevices).where(eq(driverDevices.id, result[0].insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getDriverDeviceForLogin(organizationId: number, deviceId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(driverDevices)
+    .where(and(eq(driverDevices.organizationId, organizationId), eq(driverDevices.deviceId, deviceId)))
+    .limit(1);
+  return result[0];
+}
+
+// All devices for the org, with the assigned driver's name resolved for
+// display — powers the admin "Devices" list on Driver Abstracts.
+export async function getDriverDevices(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(driverDevices)
+    .where(eq(driverDevices.organizationId, organizationId))
+    .orderBy(desc(driverDevices.lastSeenAt));
+  const driverRows = await getDrivers(organizationId);
+  return rows.map(d => ({
+    ...d,
+    driverName: d.driverId ? driverRows.find(dr => dr.id === d.driverId)?.name ?? "Unknown" : null,
+  }));
+}
+
+export async function assignDriverDevice(organizationId: number, id: number, driverId: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(driverDevices).set({ driverId }).where(and(eq(driverDevices.id, id), eq(driverDevices.organizationId, organizationId)));
+}
+
+export async function deleteDriverDevice(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(driverDevices).where(and(eq(driverDevices.id, id), eq(driverDevices.organizationId, organizationId)));
 }
 
 // ============ DRIVER SHIFT HELPERS (mileage & hours tracking) ============

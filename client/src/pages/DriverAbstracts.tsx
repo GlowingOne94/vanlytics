@@ -87,6 +87,23 @@ export default function DriverAbstracts() {
     setPinMutation.mutate({ driverId: pinTarget.driverId, pin: pinValue });
   };
 
+  // Device management — binding a driver's phone to their portal identity,
+  // instead of showing a picker of every driver's name on the device itself.
+  const [devicesDialogOpen, setDevicesDialogOpen] = useState(false);
+  const { data: devices } = trpc.driverDevices.list.useQuery(undefined, { enabled: devicesDialogOpen });
+  const assignDeviceMutation = trpc.driverDevices.assign.useMutation({
+    onSuccess: () => { utils.driverDevices.list.invalidate(); toast.success("Device updated"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const deleteDeviceMutation = trpc.driverDevices.delete.useMutation({
+    onSuccess: () => { utils.driverDevices.list.invalidate(); toast.success("Device removed"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const deviceCode = (deviceId: string) => {
+    const hex = deviceId.replace(/-/g, "").slice(0, 8).toUpperCase();
+    return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+  };
+
   // Driver create/edit dialog
   const [driverDialogOpen, setDriverDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived" | "disqualified">("active");
@@ -474,9 +491,14 @@ export default function DriverAbstracts() {
                 <p className="text-xs text-muted-foreground truncate">{portalLink}</p>
               </div>
             </div>
-            <Button size="sm" variant="outline" onClick={handleCopyPortalLink}>
-              <Copy className="h-3.5 w-3.5 mr-1" /> Copy Link
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm" variant="outline" onClick={() => setDevicesDialogOpen(true)}>
+                <Smartphone className="h-3.5 w-3.5 mr-1" /> Manage Devices
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleCopyPortalLink}>
+                <Copy className="h-3.5 w-3.5 mr-1" /> Copy Link
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -879,6 +901,58 @@ export default function DriverAbstracts() {
                 {setPinMutation.isPending ? "Saving..." : "Save PIN"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Device management dialog */}
+      <Dialog open={devicesDialogOpen} onOpenChange={setDevicesDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Driver Portal Devices</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              A phone shows up here the first time it opens the driver portal link. Assign it to a driver — that's what lets the app skip a "pick your name" screen and go straight to a PIN.
+            </p>
+            {!devices ? (
+              <p className="text-xs text-muted-foreground">Loading...</p>
+            ) : devices.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No devices have opened the portal link yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {devices.map((device) => (
+                  <div key={device.id} className="flex items-center justify-between gap-2 p-2.5 rounded-md border text-sm flex-wrap">
+                    <div className="min-w-0">
+                      <p className="font-mono font-medium">{deviceCode(device.deviceId)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Last seen {new Date(device.lastSeenAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Select
+                        value={device.driverId ? String(device.driverId) : "__unassigned__"}
+                        onValueChange={(v) => assignDeviceMutation.mutate({ id: device.id, driverId: v === "__unassigned__" ? null : parseInt(v, 10) })}
+                      >
+                        <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__unassigned__">Unassigned</SelectItem>
+                          {(drivers ?? []).filter(d => d.status === "active").map((d) => (
+                            <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+                        onClick={() => deleteDeviceMutation.mutate({ id: device.id })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
