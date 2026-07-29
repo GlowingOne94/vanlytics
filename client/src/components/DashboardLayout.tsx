@@ -39,6 +39,7 @@ import {
   Users,
   ClipboardCheck,
   UserCircle,
+  Gauge,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -60,6 +61,7 @@ const menuItems = [
   { icon: DollarSign, label: "Costs", path: "/costs" },
   { icon: Bell, label: "Alerts", path: "/alerts" },
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
+  { icon: Gauge, label: "Mileage Analysis", path: "/mileage-analysis" },
   { icon: Bot, label: "AI Advisor", path: "/advisor" },
   { icon: Users, label: "Team", path: "/team" },
 ];

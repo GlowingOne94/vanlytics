@@ -47,7 +47,7 @@ function slugify(name: string): string {
   return base || "org";
 }
 
-function getSecretKey() {
+export function getSecretKey() {
   if (!ENV.cookieSecret) {
     throw new Error("JWT_SECRET is not configured");
   }

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, like, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gte, isNotNull, like, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   alerts, Alert, InsertAlert,
@@ -18,6 +18,7 @@ import {
   driverMedicalCerts, DriverMedicalCert, InsertDriverMedicalCert,
   driverAbstracts, DriverAbstract, InsertDriverAbstract,
   driverDocuments, DriverDocument, InsertDriverDocument,
+  driverShifts, DriverShift, InsertDriverShift,
   routeImports, RouteImport, InsertRouteImport,
   trips, Trip, InsertTrip,
   tripStatusEvents, TripStatusEvent, InsertTripStatusEvent,
@@ -471,7 +472,11 @@ export async function updateDotInspection(organizationId: number, id: number, da
 export async function getDrivers(organizationId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(drivers).where(eq(drivers.organizationId, organizationId)).orderBy(drivers.name);
+  // Excludes driverPinHash — a bcrypt hash of a 4-digit PIN is cheap to
+  // brute-force offline, so it must never leave the server. driverPinSetAt
+  // is still included so the UI can show portal access status.
+  const { driverPinHash, ...columns } = getTableColumns(drivers);
+  return db.select(columns).from(drivers).where(eq(drivers.organizationId, organizationId)).orderBy(drivers.name);
 }
 
 export async function createDriver(organizationId: number, data: Omit<InsertDriver, "organizationId">) {
@@ -613,6 +618,103 @@ export async function deleteDriverDocument(organizationId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(driverDocuments).where(and(eq(driverDocuments.id, id), eq(driverDocuments.organizationId, organizationId)));
+}
+
+// ============ DRIVER PORTAL (PIN auth) HELPERS ============
+
+export async function setDriverPin(organizationId: number, driverId: number, pinHash: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(drivers)
+    .set({ driverPinHash: pinHash, driverPinSetAt: new Date() })
+    .where(and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId)));
+}
+
+export async function clearDriverPin(organizationId: number, driverId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(drivers)
+    .set({ driverPinHash: null, driverPinSetAt: null })
+    .where(and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId)));
+}
+
+// Drivers who can use the mobile portal — active status and a PIN already
+// set. Used to populate the "who are you" screen on the driver portal, so
+// only exposes id/name (no license/DOB/SSN or other admin-only fields).
+export async function getPortalDrivers(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ id: drivers.id, name: drivers.name })
+    .from(drivers)
+    .where(and(
+      eq(drivers.organizationId, organizationId),
+      eq(drivers.status, "active"),
+      isNotNull(drivers.driverPinHash),
+    ))
+    .orderBy(drivers.name);
+  return rows;
+}
+
+export async function getDriverForPortalLogin(organizationId: number, driverId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(drivers)
+    .where(and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId), eq(drivers.status, "active")))
+    .limit(1);
+  return result[0];
+}
+
+// ============ DRIVER SHIFT HELPERS (mileage & hours tracking) ============
+
+export async function getOpenShiftForDriver(organizationId: number, driverId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(driverShifts)
+    .where(and(
+      eq(driverShifts.organizationId, organizationId),
+      eq(driverShifts.driverId, driverId),
+      eq(driverShifts.status, "open"),
+    ))
+    .limit(1);
+  return result[0];
+}
+
+export async function createDriverShift(organizationId: number, data: {
+  driverId: number;
+  vehicleId: number;
+  startMileage: number;
+  clockInAt: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(driverShifts).values({ ...data, organizationId, status: "open" });
+  return { id: result[0].insertId };
+}
+
+export async function closeDriverShift(organizationId: number, id: number, data: { endMileage: number; clockOutAt: Date }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(driverShifts)
+    .set({ ...data, status: "closed" })
+    .where(and(eq(driverShifts.id, id), eq(driverShifts.organizationId, organizationId)));
+}
+
+export async function getDriverShiftById(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(driverShifts)
+    .where(and(eq(driverShifts.id, id), eq(driverShifts.organizationId, organizationId)))
+    .limit(1);
+  return result[0];
+}
+
+export async function getDriverShifts(organizationId: number, opts?: { startDate?: number; endDate?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(driverShifts.organizationId, organizationId)];
+  if (opts?.startDate) conditions.push(gte(driverShifts.clockInAt, new Date(opts.startDate)));
+  if (opts?.endDate) conditions.push(lte(driverShifts.clockInAt, new Date(opts.endDate)));
+  return db.select().from(driverShifts).where(and(...conditions)).orderBy(desc(driverShifts.clockInAt));
 }
 
 // ============ ALERT HELPERS ============

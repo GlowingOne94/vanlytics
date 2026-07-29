@@ -24,6 +24,8 @@ import Team from "./pages/Team";
 import ResetPassword from "./pages/ResetPassword";
 import AcceptInvite from "./pages/AcceptInvite";
 import Marketing from "./pages/Marketing";
+import DriverPortal from "./pages/DriverPortal";
+import MileageAnalysis from "./pages/MileageAnalysis";
 
 function AuthenticatedApp() {
   return (
@@ -40,6 +42,7 @@ function AuthenticatedApp() {
         <Route path="/costs" component={CostIntelligence} />
         <Route path="/alerts" component={Alerts} />
         <Route path="/analytics" component={Analytics} />
+        <Route path="/mileage-analysis" component={MileageAnalysis} />
         <Route path="/advisor" component={Advisor} />
         <Route path="/team" component={Team} />
         <Route component={NotFound} />
@@ -87,6 +90,9 @@ function Router() {
       <Route path="/accept-invite" component={AcceptInvite} />
       <Route path="/pricing" component={Marketing} />
       <Route path="/login" component={LoginRoute} />
+      {/* Driver mobile portal — its own PIN-based auth, entirely separate
+          from office login, so it must never be gated by AuthenticatedApp. */}
+      <Route path="/driver/:slug" component={DriverPortal} />
       <Route path="/" component={RootRoute} />
       <Route>
         <AuthenticatedApp />

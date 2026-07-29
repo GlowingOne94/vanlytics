@@ -55,6 +55,25 @@ const requireOrg = t.middleware(async opts => {
 // repairs, shops, etc) instead of protectedProcedure.
 export const orgProcedure = t.procedure.use(requireOrg);
 
+// Signed into the driver mobile portal via PIN — see server/driverAuth.ts.
+// Entirely separate from protectedProcedure/orgProcedure (office login).
+export const driverProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    const { ctx, next } = opts;
+
+    if (!ctx.driver) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Please clock in to continue." });
+    }
+
+    return next({
+      ctx: {
+        ...ctx,
+        driver: ctx.driver,
+      },
+    });
+  }),
+);
+
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;

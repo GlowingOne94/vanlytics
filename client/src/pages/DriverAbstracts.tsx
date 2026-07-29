@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink, Download } from "lucide-react";
+import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink, Download, Smartphone, KeyRound, Copy } from "lucide-react";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { useState, useRef } from "react";
@@ -57,6 +57,35 @@ export default function DriverAbstracts() {
   const { data: orgSettings } = trpc.organizations.getSettings.useQuery();
   const medicalEnabled = orgSettings?.enabledModules.driverMedical ?? true;
   const utils = trpc.useUtils();
+
+  // Driver mobile portal (mileage/hours clock in-out) PIN management
+  const [pinTarget, setPinTarget] = useState<{ driverId: number; driverName: string; hasPin: boolean } | null>(null);
+  const [pinValue, setPinValue] = useState("");
+  const portalLink = orgSettings?.slug ? `${window.location.origin}/driver/${orgSettings.slug}` : "";
+
+  const setPinMutation = trpc.drivers.setPin.useMutation({
+    onSuccess: () => {
+      utils.drivers.list.invalidate();
+      setPinTarget(null);
+      setPinValue("");
+      toast.success("Driver PIN saved");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const clearPinMutation = trpc.drivers.clearPin.useMutation({
+    onSuccess: () => { utils.drivers.list.invalidate(); setPinTarget(null); toast.success("Portal access removed"); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleCopyPortalLink = () => {
+    navigator.clipboard.writeText(portalLink);
+    toast.success("Portal link copied");
+  };
+  const handleSavePin = () => {
+    if (!pinTarget) return;
+    if (!/^\d{4}$/.test(pinValue)) { toast.error("PIN must be exactly 4 digits"); return; }
+    setPinMutation.mutate({ driverId: pinTarget.driverId, pin: pinValue });
+  };
 
   // Driver create/edit dialog
   const [driverDialogOpen, setDriverDialogOpen] = useState(false);
@@ -435,6 +464,23 @@ export default function DriverAbstracts() {
         </div>
       </div>
 
+      {portalLink && (
+        <Card className="bg-muted/20">
+          <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0">
+              <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Driver mobile portal</p>
+                <p className="text-xs text-muted-foreground truncate">{portalLink}</p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={handleCopyPortalLink}>
+              <Copy className="h-3.5 w-3.5 mr-1" /> Copy Link
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">
           {statusFilter === "all" ? "No drivers added yet." : `No ${statusFilter} drivers.`}
@@ -471,6 +517,12 @@ export default function DriverAbstracts() {
                       onClick={() => openDocsBrowser(driver.id, driver.name)}
                     >
                       <FolderOpen className="h-3.5 w-3.5 mr-1" /> Documents
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" className="h-8 px-2 text-xs"
+                      onClick={() => { setPinTarget({ driverId: driver.id, driverName: driver.name, hasPin: Boolean(driver.driverPinSetAt) }); setPinValue(""); }}
+                    >
+                      <KeyRound className="h-3.5 w-3.5 mr-1" /> {driver.driverPinSetAt ? "Reset PIN" : "Set PIN"}
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDriver(driver)}>
                       <Pencil className="h-3.5 w-3.5" />
@@ -787,6 +839,45 @@ export default function DriverAbstracts() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Driver portal PIN dialog */}
+      <Dialog open={Boolean(pinTarget)} onOpenChange={(open) => { if (!open) setPinTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{pinTarget ? `${pinTarget.hasPin ? "Reset" : "Set"} PIN — ${pinTarget.driverName}` : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              This 4-digit PIN is what {pinTarget?.driverName} enters on the driver mobile portal to clock in/out. Share it with them directly — it isn't emailed automatically.
+            </p>
+            <div>
+              <Label>New 4-digit PIN</Label>
+              <Input
+                value={pinValue}
+                maxLength={4}
+                inputMode="numeric"
+                placeholder="1234"
+                onChange={(e) => setPinValue(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              />
+            </div>
+            <div className="flex gap-2">
+              {pinTarget?.hasPin && (
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => pinTarget && clearPinMutation.mutate({ driverId: pinTarget.driverId })}
+                  disabled={clearPinMutation.isPending}
+                >
+                  Remove Access
+                </Button>
+              )}
+              <Button className="flex-1" onClick={handleSavePin} disabled={setPinMutation.isPending}>
+                {setPinMutation.isPending ? "Saving..." : "Save PIN"}
+              </Button>
             </div>
           </div>
         </DialogContent>

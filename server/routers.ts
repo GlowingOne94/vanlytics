@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, orgProcedure, adminProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, orgProcedure, driverProcedure, adminProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
@@ -10,6 +10,10 @@ import { generateToken, hashToken } from "./_core/tokens";
 import { sendInviteEmail } from "./_core/email";
 import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, extraVehiclePriceId } from "./_core/stripe";
 import { ENV } from "./_core/env";
+import {
+  hashPin, verifyPin, createDriverSessionToken,
+  setDriverSessionCookie, clearDriverSessionCookie,
+} from "./driverAuth";
 import * as db from "./db";
 
 export const appRouter = router({
@@ -34,6 +38,8 @@ export const appRouter = router({
     getSettings: orgProcedure.query(async ({ ctx }) => {
       const org = await db.getOrganizationById(ctx.organizationId);
       return {
+        name: org?.name ?? "",
+        slug: org?.slug ?? "",
         industryType: org?.industryType ?? "other",
         // Default to true when unset, so orgs created before this feature
         // existed keep showing medical tracking exactly as before.
@@ -621,6 +627,21 @@ export const appRouter = router({
         await db.updateDriver(ctx.organizationId, input.driverId, { cdlDocumentUrl: null, cdlDocumentKey: null });
         return { success: true } as const;
       }),
+    // Grants/resets mobile portal (clock in/out) access for a driver. Admin
+    // only, since a PIN is effectively a login credential.
+    setPin: adminProcedure
+      .input(z.object({ driverId: z.number(), pin: z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits") }))
+      .mutation(async ({ input, ctx }) => {
+        const pinHash = await hashPin(input.pin);
+        await db.setDriverPin(ctx.organizationId, input.driverId, pinHash);
+        return { success: true } as const;
+      }),
+    clearPin: adminProcedure
+      .input(z.object({ driverId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.clearDriverPin(ctx.organizationId, input.driverId);
+        return { success: true } as const;
+      }),
   }),
 
   // ============ DRIVER MEDICAL CERTS ============
@@ -784,6 +805,172 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriverDocument(ctx.organizationId, input.id);
         return { success: true } as const;
+      }),
+  }),
+
+  // ============ DRIVER MOBILE PORTAL (clock in/out + mileage) ============
+  // PIN-based auth, entirely separate from the office login above — see
+  // server/driverAuth.ts. The "who are you" screen is intentionally public
+  // (anyone with the org's portal link can see driver first names, same as
+  // a physical time clock would), but every action beyond that requires the
+  // correct PIN and is scoped to that one driver's own record.
+  driverPortal: router({
+    getOrgBySlug: publicProcedure
+      .input(z.object({ slug: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const org = await db.getOrganizationBySlug(input.slug);
+        if (!org) return null;
+        return { id: org.id, name: org.name };
+      }),
+    listDrivers: publicProcedure
+      .input(z.object({ organizationId: z.number() }))
+      .query(async ({ input }) => {
+        return db.getPortalDrivers(input.organizationId);
+      }),
+    login: publicProcedure
+      .input(z.object({ organizationId: z.number(), driverId: z.number(), pin: z.string().min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const driver = await db.getDriverForPortalLogin(input.organizationId, input.driverId);
+        if (!driver || !driver.driverPinHash) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect PIN." });
+        }
+        const valid = await verifyPin(input.pin, driver.driverPinHash);
+        if (!valid) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect PIN." });
+        }
+        const token = await createDriverSessionToken(driver.id, driver.organizationId);
+        setDriverSessionCookie(ctx.req, ctx.res, token);
+        return { success: true, driverName: driver.name } as const;
+      }),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      clearDriverSessionCookie(ctx.req, ctx.res);
+      return { success: true } as const;
+    }),
+    // Who's currently signed into the portal on this device, if anyone.
+    me: publicProcedure.query(({ ctx }) => {
+      if (!ctx.driver) return null;
+      return { id: ctx.driver.id, name: ctx.driver.name, organizationId: ctx.driver.organizationId };
+    }),
+    activeVehicles: driverProcedure.query(async ({ ctx }) => {
+      const vehicles = await db.getVehicles(ctx.driver.organizationId);
+      return vehicles
+        .filter(v => v.status !== "retired")
+        .map(v => ({ id: v.id, vanNumber: v.vanNumber, mileage: v.mileage }));
+    }),
+    myOpenShift: driverProcedure.query(async ({ ctx }) => {
+      const shift = await db.getOpenShiftForDriver(ctx.driver.organizationId, ctx.driver.id);
+      if (!shift) return null;
+      const vehicle = await db.getVehicleById(ctx.driver.organizationId, shift.vehicleId);
+      return { ...shift, vanNumber: vehicle?.vanNumber ?? "Unknown" };
+    }),
+    clockIn: driverProcedure
+      .input(z.object({ vehicleId: z.number(), startMileage: z.number().min(0) }))
+      .mutation(async ({ input, ctx }) => {
+        const existing = await db.getOpenShiftForDriver(ctx.driver.organizationId, ctx.driver.id);
+        if (existing) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "You're already clocked in — clock out first." });
+        }
+        const vehicle = await db.getVehicleById(ctx.driver.organizationId, input.vehicleId);
+        if (!vehicle) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Van not found." });
+        }
+        const result = await db.createDriverShift(ctx.driver.organizationId, {
+          driverId: ctx.driver.id,
+          vehicleId: input.vehicleId,
+          startMileage: input.startMileage,
+          clockInAt: new Date(),
+        });
+        return { id: result.id } as const;
+      }),
+    clockOut: driverProcedure
+      .input(z.object({ shiftId: z.number(), endMileage: z.number().min(0) }))
+      .mutation(async ({ input, ctx }) => {
+        const shift = await db.getDriverShiftById(ctx.driver.organizationId, input.shiftId);
+        if (!shift || shift.driverId !== ctx.driver.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Shift not found." });
+        }
+        if (shift.status !== "open") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This shift is already closed." });
+        }
+        if (input.endMileage < shift.startMileage) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Ending mileage can't be less than starting mileage." });
+        }
+        await db.closeDriverShift(ctx.driver.organizationId, shift.id, {
+          endMileage: input.endMileage,
+          clockOutAt: new Date(),
+        });
+        // Keep the van's on-file mileage current for maintenance/DOT interval
+        // calculations, same as the odometer reading would be after a drive.
+        const vehicle = await db.getVehicleById(ctx.driver.organizationId, shift.vehicleId);
+        if (vehicle && input.endMileage > vehicle.mileage) {
+          await db.updateVehicle(ctx.driver.organizationId, vehicle.id, { mileage: input.endMileage });
+        }
+        return { success: true, milesDriven: input.endMileage - shift.startMileage } as const;
+      }),
+  }),
+
+  // ============ MILEAGE ANALYSIS (admin dashboard) ============
+  mileageAnalysis: router({
+    summary: orgProcedure
+      .input(z.object({ startDate: z.number().optional(), endDate: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        const orgId = ctx.organizationId;
+        const [shifts, vehicles, driversList] = await Promise.all([
+          db.getDriverShifts(orgId, input),
+          db.getVehicles(orgId),
+          db.getDrivers(orgId),
+        ]);
+        const closed = shifts.filter(s => s.status === "closed" && s.endMileage != null && s.clockOutAt != null);
+
+        const byVehicle = new Map<number, { vehicleId: number; vanNumber: string; milesDriven: number; shiftCount: number }>();
+        const byDriver = new Map<number, { driverId: number; driverName: string; hoursWorked: number; shiftCount: number }>();
+
+        for (const s of closed) {
+          const miles = s.endMileage! - s.startMileage;
+          const hours = (s.clockOutAt!.getTime() - s.clockInAt.getTime()) / (1000 * 60 * 60);
+
+          const vehicle = vehicles.find(v => v.id === s.vehicleId);
+          const vKey = byVehicle.get(s.vehicleId) ?? {
+            vehicleId: s.vehicleId, vanNumber: vehicle?.vanNumber ?? "Unknown", milesDriven: 0, shiftCount: 0,
+          };
+          vKey.milesDriven += miles;
+          vKey.shiftCount += 1;
+          byVehicle.set(s.vehicleId, vKey);
+
+          const driver = driversList.find(d => d.id === s.driverId);
+          const dKey = byDriver.get(s.driverId) ?? {
+            driverId: s.driverId, driverName: driver?.name ?? "Unknown", hoursWorked: 0, shiftCount: 0,
+          };
+          dKey.hoursWorked += hours;
+          dKey.shiftCount += 1;
+          byDriver.set(s.driverId, dKey);
+        }
+
+        return {
+          byVehicle: Array.from(byVehicle.values())
+            .map(v => ({ ...v, milesDriven: Math.round(v.milesDriven) }))
+            .sort((a, b) => b.milesDriven - a.milesDriven),
+          byDriver: Array.from(byDriver.values())
+            .map(d => ({ ...d, hoursWorked: Math.round(d.hoursWorked * 10) / 10 }))
+            .sort((a, b) => b.hoursWorked - a.hoursWorked),
+          openShiftCount: shifts.length - closed.length,
+        };
+      }),
+    shifts: orgProcedure
+      .input(z.object({ startDate: z.number().optional(), endDate: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        const orgId = ctx.organizationId;
+        const [shifts, vehicles, driversList] = await Promise.all([
+          db.getDriverShifts(orgId, input),
+          db.getVehicles(orgId),
+          db.getDrivers(orgId),
+        ]);
+        return shifts.map(s => ({
+          ...s,
+          vanNumber: vehicles.find(v => v.id === s.vehicleId)?.vanNumber ?? "Unknown",
+          driverName: driversList.find(d => d.id === s.driverId)?.name ?? "Unknown",
+          milesDriven: s.endMileage != null ? s.endMileage - s.startMileage : null,
+        }));
       }),
   }),
 

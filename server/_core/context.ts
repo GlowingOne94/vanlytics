@@ -1,6 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User } from "../../drizzle/schema";
+import type { Driver, User } from "../../drizzle/schema";
 import { authenticateRequest } from "../auth";
+import { authenticateDriverRequest } from "../driverAuth";
 import * as db from "../db";
 
 export type TrpcContext = {
@@ -14,6 +15,11 @@ export type TrpcContext = {
   // regardless of what header value the client sends.
   organizationId: number | null;
   role: "user" | "admin" | null;
+  // A driver signed into the mobile portal via PIN — entirely separate from
+  // `user`/`organizationId` above (office login). Never both non-null for
+  // the same request in normal use, but nothing stops a phone from holding
+  // both cookies, so procedures should check whichever one they need.
+  driver: Driver | null;
 };
 
 export async function createContext(
@@ -22,12 +28,19 @@ export async function createContext(
   let user: User | null = null;
   let organizationId: number | null = null;
   let role: "user" | "admin" | null = null;
+  let driver: Driver | null = null;
 
   try {
     user = await authenticateRequest(opts.req);
   } catch (error) {
     // Authentication is optional for public procedures.
     user = null;
+  }
+
+  try {
+    driver = await authenticateDriverRequest(opts.req);
+  } catch (error) {
+    driver = null;
   }
 
   if (user) {
@@ -61,5 +74,6 @@ export async function createContext(
     user,
     organizationId,
     role,
+    driver,
   };
 }

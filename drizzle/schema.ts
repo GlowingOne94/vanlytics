@@ -320,6 +320,11 @@ export const drivers = mysqlTable("drivers", {
   wheelchairQualified: mysqlEnum("wheelchairQualified", ["yes", "no"]).default("yes").notNull(),
   twoPersonAssist: mysqlEnum("twoPersonAssist", ["yes", "no"]).default("no").notNull(),
   notes: text("notes"),
+  // PIN for the driver mobile portal (clock in/out + mileage logging). Hashed
+  // like a password; null means the driver hasn't been given portal access
+  // yet. Set/reset only by an admin from the Driver Abstracts page.
+  driverPinHash: varchar("driverPinHash", { length: 255 }),
+  driverPinSetAt: timestamp("driverPinSetAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -475,3 +480,32 @@ export const tripStatusEvents = mysqlTable("trip_status_events", {
 
 export type TripStatusEvent = typeof tripStatusEvents.$inferSelect;
 export type InsertTripStatusEvent = typeof tripStatusEvents.$inferInsert;
+
+/* ============================================================
+ * MILEAGE & HOURS TRACKING (driver mobile portal)
+ * ============================================================ */
+
+/**
+ * Driver Shifts - one row per clock-in/clock-out cycle, logged by a driver
+ * from the mobile portal against a specific van. endMileage/clockOutAt are
+ * null while the shift is open (status "open"); closing the shift sets both
+ * and flips status to "closed". Miles driven = endMileage - startMileage;
+ * hours worked = clockOutAt - clockInAt.
+ */
+export const driverShifts = mysqlTable("driver_shifts", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull(),
+  vehicleId: int("vehicleId").notNull(),
+  clockInAt: timestamp("clockInAt").notNull(),
+  clockOutAt: timestamp("clockOutAt"),
+  startMileage: int("startMileage").notNull(),
+  endMileage: int("endMileage"),
+  status: mysqlEnum("status", ["open", "closed"]).default("open").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DriverShift = typeof driverShifts.$inferSelect;
+export type InsertDriverShift = typeof driverShifts.$inferInsert;
