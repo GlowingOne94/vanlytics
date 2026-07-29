@@ -55,6 +55,14 @@ export default function Alerts() {
     onError: (err) => toast.error(err.message),
   });
 
+  const dismissAllMutation = trpc.alerts.dismissAll.useMutation({
+    onSuccess: () => {
+      utils.alerts.list.invalidate();
+      toast.success("All alerts dismissed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   // Check for new alerts once automatically when this page loads, so alerts
   // stay current without anyone having to remember to click "Check Now".
   useEffect(() => {
@@ -80,15 +88,28 @@ export default function Alerts() {
             {alerts?.filter(a => a.isRead === "no").length ?? 0} unread alerts
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => checkAlertsMutation.mutate()}
-          disabled={checkAlertsMutation.isPending}
-        >
-          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${checkAlertsMutation.isPending ? "animate-spin" : ""}`} />
-          {checkAlertsMutation.isPending ? "Checking..." : "Check Now"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!window.confirm("Dismiss all alerts? This can't be undone.")) return;
+              dismissAllMutation.mutate();
+            }}
+            disabled={dismissAllMutation.isPending || !alerts || alerts.length === 0}
+          >
+            {dismissAllMutation.isPending ? "Dismissing..." : "Dismiss All"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => checkAlertsMutation.mutate()}
+            disabled={checkAlertsMutation.isPending}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${checkAlertsMutation.isPending ? "animate-spin" : ""}`} />
+            {checkAlertsMutation.isPending ? "Checking..." : "Check Now"}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (

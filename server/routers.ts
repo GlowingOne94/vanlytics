@@ -1229,6 +1229,10 @@ export const appRouter = router({
         await db.dismissAlert(ctx.organizationId, input.id);
         return { success: true };
       }),
+    dismissAll: orgProcedure.mutation(async ({ ctx }) => {
+      await db.dismissAllAlerts(ctx.organizationId);
+      return { success: true } as const;
+    }),
   }),
 
   // ============ DASHBOARD ============

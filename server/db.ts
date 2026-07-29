@@ -677,6 +677,12 @@ export async function dismissAlert(organizationId: number, id: number) {
   await db.update(alerts).set({ isDismissed: "yes" }).where(and(eq(alerts.id, id), eq(alerts.organizationId, organizationId)));
 }
 
+export async function dismissAllAlerts(organizationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(alerts).set({ isDismissed: "yes" }).where(and(eq(alerts.organizationId, organizationId), eq(alerts.isDismissed, "no")));
+}
+
 // ============ DASHBOARD / ANALYTICS HELPERS ============
 
 export async function getDashboardStats(organizationId: number) {
