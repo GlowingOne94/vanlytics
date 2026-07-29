@@ -42,6 +42,14 @@ export default function Team() {
     onError: (err) => toast.error(err.message),
   });
 
+  const regenerateCodeMutation = trpc.organizations.regenerateCode.useMutation({
+    onSuccess: () => {
+      utils.organizations.getSettings.invalidate();
+      toast.success("Company code regenerated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const checkoutMutation = trpc.billing.createCheckoutSession.useMutation({
     onSuccess: (result) => { if (result.url) window.location.href = result.url; },
     onError: (err) => toast.error(err.message),
@@ -110,6 +118,28 @@ export default function Team() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-4 pb-3 border-b">
+              <div>
+                <p className="text-sm font-medium">Company Code</p>
+                <p className="text-xs text-muted-foreground">
+                  Drivers enter this (plus a pairing code) to set up the mobile app on their phone.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-mono font-bold tracking-wider">{orgSettings.organizationCode ?? "—"}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={regenerateCodeMutation.isPending}
+                  onClick={() => {
+                    if (!window.confirm("Generate a new company code? The old one will stop working immediately — any drivers who haven't paired yet will need the new one.")) return;
+                    regenerateCodeMutation.mutate();
+                  }}
+                >
+                  {regenerateCodeMutation.isPending ? "..." : "Regenerate"}
+                </Button>
+              </div>
+            </div>
             <div>
               <Label className="text-sm">Business type</Label>
               <Select

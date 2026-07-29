@@ -7,7 +7,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
-import { generateToken, hashToken } from "./_core/tokens";
+import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
 import { sendInviteEmail } from "./_core/email";
 import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, extraVehiclePriceId } from "./_core/stripe";
 import { ENV } from "./_core/env";
@@ -39,6 +39,7 @@ export const appRouter = router({
         // Default to true when unset, so orgs created before this feature
         // existed keep showing medical tracking exactly as before.
         enabledModules: { driverMedical: org?.enabledModules?.driverMedical ?? true },
+        organizationCode: org?.organizationCode ?? null,
       };
     }),
     updateSettings: adminProcedure
@@ -50,6 +51,14 @@ export const appRouter = router({
         await db.updateOrganizationSettings(ctx.organizationId, input);
         return { success: true } as const;
       }),
+    regenerateCode: adminProcedure.mutation(async ({ ctx }) => {
+      let code = generateOrgCode();
+      while (await db.getOrganizationByCode(code)) {
+        code = generateOrgCode();
+      }
+      await db.setOrganizationCode(ctx.organizationId, code);
+      return { organizationCode: code } as const;
+    }),
     members: orgProcedure.query(async ({ ctx }) => {
       return db.getOrganizationMembers(ctx.organizationId);
     }),
@@ -556,6 +565,26 @@ export const appRouter = router({
         }
 
         await db.updateDotInspection(ctx.organizationId, id, data);
+        return { success: true } as const;
+      }),
+    uploadDocument: orgProcedure
+      .input(z.object({
+        id: z.number(),
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `vehicles/dot-inspections/${input.id}/${input.fileName}`;
+        const { url, key: fileKey } = await storagePut(key, buffer, input.contentType);
+        await db.updateDotInspection(ctx.organizationId, input.id, { documentUrl: url, documentKey: fileKey });
+        return { url, key: fileKey };
+      }),
+    removeDocument: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateDotInspection(ctx.organizationId, input.id, { documentUrl: null, documentKey: null });
         return { success: true } as const;
       }),
   }),

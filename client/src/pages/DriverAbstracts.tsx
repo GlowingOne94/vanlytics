@@ -859,7 +859,7 @@ export default function DriverAbstracts() {
             <div className="pt-4 border-t">
               <Label className="text-sm">Pair a New Device</Label>
               <p className="text-xs text-muted-foreground mb-2">
-                Generates a one-time code (valid 30 minutes). Have the driver open the app and enter it to link their phone.
+                The driver needs both your company code and a one-time pairing code (valid 30 minutes) to link their phone.
               </p>
               <Button
                 size="sm"
@@ -870,11 +870,18 @@ export default function DriverAbstracts() {
                 {generateCodeMutation.isPending ? "Generating..." : "Generate Pairing Code"}
               </Button>
               {generatedCode && (
-                <div className="mt-3 p-3 rounded-md border bg-muted/30 text-center">
-                  <p className="text-2xl font-bold tracking-widest">{generatedCode.code}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Expires {new Date(generatedCode.expiresAt).toLocaleTimeString()}
-                  </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="p-3 rounded-md border bg-muted/30 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Company Code</p>
+                    <p className="text-xl font-bold tracking-widest font-mono">{orgSettings?.organizationCode ?? "—"}</p>
+                  </div>
+                  <div className="p-3 rounded-md border bg-muted/30 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Pairing Code</p>
+                    <p className="text-xl font-bold tracking-widest">{generatedCode.code}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Expires {new Date(generatedCode.expiresAt).toLocaleTimeString()}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

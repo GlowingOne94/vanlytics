@@ -58,6 +58,19 @@ export async function getOrganizationBySlug(slug: string) {
   return result[0];
 }
 
+export async function getOrganizationByCode(code: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(organizations).where(eq(organizations.organizationCode, code)).limit(1);
+  return result[0];
+}
+
+export async function setOrganizationCode(organizationId: number, code: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(organizations).set({ organizationCode: code }).where(eq(organizations.id, organizationId));
+}
+
 export async function getOrganizationById(id: number) {
   const db = await getDb();
   if (!db) return undefined;

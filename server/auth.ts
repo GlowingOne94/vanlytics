@@ -8,7 +8,7 @@ import type { User } from "../drizzle/schema";
 import * as db from "./db";
 import { ENV } from "./_core/env";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { generateToken, hashToken } from "./_core/tokens";
+import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
 import { sendPasswordResetEmail } from "./_core/email";
 
 const BCRYPT_ROUNDS = 12;
@@ -114,7 +114,13 @@ export function registerAuthRoutes(app: Express) {
       slug = `${baseSlug}-${attempt}`;
     }
 
+    let organizationCode = generateOrgCode();
+    while (await db.getOrganizationByCode(organizationCode)) {
+      organizationCode = generateOrgCode();
+    }
+
     const organization = await db.createOrganization({
+      organizationCode,
       name: companyName,
       slug,
       industryType,

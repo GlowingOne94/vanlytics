@@ -8,6 +8,10 @@ export const organizations = mysqlTable("organizations", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 200 }).notNull(),
   slug: varchar("slug", { length: 100 }).notNull().unique(),
+  // Short, human-readable code drivers enter (alongside a pairing code) when
+  // first setting up the mobile app — makes sure the pairing is unambiguously
+  // locked to the right company, separate from the internal numeric ID/slug.
+  organizationCode: varchar("organizationCode", { length: 12 }).unique(),
   industryType: mysqlEnum("industryType", ["nemt", "other"]).default("other").notNull(),
   enabledModules: json("enabledModules").$type<{ driverMedical?: boolean }>(),
   planTier: mysqlEnum("planTier", ["none", "starter", "fleet", "fleet_pro", "enterprise"]).default("none").notNull(),
@@ -294,6 +298,8 @@ export const dotInspections = mysqlTable("dot_inspections", {
   expiryDate: bigint("expiryDate", { mode: "number" }).notNull(),
   mileageAtInspection: int("mileageAtInspection"),
   inspector: varchar("inspector", { length: 100 }),
+  documentUrl: text("documentUrl"),
+  documentKey: varchar("documentKey", { length: 255 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

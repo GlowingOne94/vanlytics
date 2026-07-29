@@ -26,7 +26,8 @@ import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 
 const categories = [
   "AC/HVAC", "Brakes", "Cooling", "DOT Inspection", "Electrical", "Engine", "Exhaust",
-  "Filters", "Fluids", "Suspension", "Tires", "Transmission", "Wheelchair Lift", "Body", "Other",
+  "Filters", "Fluids", "Registration", "Suspension", "Tires", "Towing", "Transmission",
+  "Wheelchair Lift", "Body", "Other",
 ];
 
 function RepairInvoices({ repairId }: { repairId: number }) {

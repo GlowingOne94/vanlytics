@@ -64,18 +64,29 @@ export function registerMobileApi(app: Express) {
   // ---- Pairing: bind a physical device to a driver via a one-time code ----
   app.post("/api/mobile/pair", async (req: Request, res: Response) => {
     const parsed = z.object({
+      orgCode: z.string().min(1),
       code: z.string().min(1),
       deviceId: z.string().min(1),
     }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Missing pairing code or device ID." });
+      res.status(400).json({ error: "Missing company code, pairing code, or device ID." });
       return;
     }
-    const { code, deviceId } = parsed.data;
+    const { orgCode, code, deviceId } = parsed.data;
+
+    const org = await db.getOrganizationByCode(orgCode.trim().toUpperCase());
+    if (!org) {
+      res.status(400).json({ error: "Company code not recognized. Double-check it with your dispatcher." });
+      return;
+    }
 
     const pairing = await db.getPairingCodeByCode(code.trim());
     if (!pairing || pairing.usedAt || pairing.expiresAt.getTime() < Date.now()) {
       res.status(400).json({ error: "This pairing code is invalid or has expired. Ask your dispatcher for a new one." });
+      return;
+    }
+    if (pairing.organizationId !== org.id) {
+      res.status(400).json({ error: "This pairing code doesn't belong to that company. Double-check both codes with your dispatcher." });
       return;
     }
 
