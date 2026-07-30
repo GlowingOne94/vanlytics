@@ -24,6 +24,7 @@ import {
   driverPairingCodes, DriverPairingCode, InsertDriverPairingCode,
   driverDevices, DriverDevice, InsertDriverDevice,
   driverShifts, DriverShift, InsertDriverShift,
+  driverLocations, DriverLocation, InsertDriverLocation,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1651,6 +1652,63 @@ export async function deleteDriverShift(organizationId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(driverShifts).where(and(eq(driverShifts.id, id), eq(driverShifts.organizationId, organizationId)));
+}
+
+// ============ DRIVER LOCATION HELPERS ============
+
+export async function upsertDriverLocation(
+  organizationId: number,
+  driverId: number,
+  vehicleId: number | null,
+  latitude: number,
+  longitude: number,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(driverLocations).where(eq(driverLocations.driverId, driverId)).limit(1);
+  if (existing.length > 0) {
+    await db.update(driverLocations)
+      .set({ organizationId, vehicleId, latitude: String(latitude), longitude: String(longitude), recordedAt: new Date() })
+      .where(eq(driverLocations.driverId, driverId));
+  } else {
+    await db.insert(driverLocations).values({
+      organizationId, driverId, vehicleId,
+      latitude: String(latitude), longitude: String(longitude),
+    });
+  }
+}
+
+// Only returns locations for drivers who are CURRENTLY clocked in — once a
+// driver clocks out, tracking stops and they disappear from the live map
+// rather than leaving a stale pin behind.
+export async function getLiveDriverLocations(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const openShifts = await db.select().from(driverShifts)
+    .where(and(eq(driverShifts.organizationId, organizationId), sql`${driverShifts.clockOutAt} is null`));
+  if (openShifts.length === 0) return [];
+
+  const openDriverIds = new Set(openShifts.map(s => s.driverId));
+  const locations = await db.select().from(driverLocations).where(eq(driverLocations.organizationId, organizationId));
+  const allDrivers = await getDrivers(organizationId);
+  const allVehicles = await getVehicles(organizationId);
+
+  return locations
+    .filter(loc => openDriverIds.has(loc.driverId))
+    .map(loc => {
+      const driver = allDrivers.find(d => d.id === loc.driverId);
+      const vehicle = allVehicles.find(v => v.id === loc.vehicleId);
+      return {
+        driverId: loc.driverId,
+        driverName: driver?.name ?? "Unknown",
+        vehicleId: loc.vehicleId,
+        vanNumber: vehicle?.vanNumber ?? null,
+        latitude: parseFloat(loc.latitude),
+        longitude: parseFloat(loc.longitude),
+        recordedAt: loc.recordedAt,
+      };
+    });
 }
 
 export async function getDriverShifts(organizationId: number, opts?: { startDate?: number; endDate?: number }) {

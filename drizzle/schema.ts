@@ -550,3 +550,23 @@ export const driverShifts = mysqlTable("driver_shifts", {
 
 export type DriverShift = typeof driverShifts.$inferSelect;
 export type InsertDriverShift = typeof driverShifts.$inferInsert;
+
+/**
+ * Driver Locations - the driver's most recent known position, updated in
+ * place (one row per driver, not a full history). Only meaningful while a
+ * driver is clocked in — the app stops sending updates at clock-out, and
+ * the Live Map only shows drivers with a currently-open shift so a stale
+ * pin never lingers after someone's off the clock.
+ */
+export const driverLocations = mysqlTable("driver_locations", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  driverId: int("driverId").notNull().unique(),
+  vehicleId: int("vehicleId"),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+});
+
+export type DriverLocation = typeof driverLocations.$inferSelect;
+export type InsertDriverLocation = typeof driverLocations.$inferInsert;

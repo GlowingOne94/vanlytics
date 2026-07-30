@@ -16,6 +16,7 @@ import Maintenance from "./pages/Maintenance";
 import DotInspections from "./pages/DotInspections";
 import DriverAbstracts from "./pages/DriverAbstracts";
 import MileageAnalysis from "./pages/MileageAnalysis";
+import LiveMap from "./pages/LiveMap";
 import Shops from "./pages/Shops";
 import CostIntelligence from "./pages/CostIntelligence";
 import Alerts from "./pages/Alerts";
@@ -38,6 +39,7 @@ function AuthenticatedApp() {
         <Route path="/dot-inspections" component={DotInspections} />
         <Route path="/drivers" component={DriverAbstracts} />
         <Route path="/mileage-analysis" component={MileageAnalysis} />
+        <Route path="/live-map" component={LiveMap} />
         <Route path="/shops" component={Shops} />
         <Route path="/costs" component={CostIntelligence} />
         <Route path="/alerts" component={Alerts} />

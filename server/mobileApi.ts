@@ -245,4 +245,25 @@ export function registerMobileApi(app: Express) {
       hoursWorked: Math.round(hoursWorked * 100) / 100,
     });
   });
+
+  // ---- Location ping: only meaningful while clocked in. The app itself
+  // stops sending these at clock-out, but we also double check server-side
+  // so a stray late request can't keep a stale pin alive. ----
+  app.post("/api/mobile/location", requireMobileAuth, async (req: Request, res: Response) => {
+    const { driverId, organizationId } = (req as any).mobileAuth as MobileTokenPayload;
+    const parsed = z.object({ latitude: z.number(), longitude: z.number() }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Missing latitude/longitude." });
+      return;
+    }
+
+    const openShift = await db.getOpenShiftForDriver(organizationId, driverId);
+    if (!openShift) {
+      res.status(400).json({ error: "Not currently clocked in — location updates are only accepted during a shift." });
+      return;
+    }
+
+    await db.upsertDriverLocation(organizationId, driverId, openShift.vehicleId, parsed.data.latitude, parsed.data.longitude);
+    res.json({ success: true });
+  });
 }

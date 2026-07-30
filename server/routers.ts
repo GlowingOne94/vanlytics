@@ -1210,6 +1210,13 @@ export const appRouter = router({
       }),
   }),
 
+  // ============ LIVE MAP ============
+  liveMap: router({
+    getLocations: orgProcedure.query(async ({ ctx }) => {
+      return db.getLiveDriverLocations(ctx.organizationId);
+    }),
+  }),
+
   // ============ ALERTS ============
   alerts: router({
     list: orgProcedure
