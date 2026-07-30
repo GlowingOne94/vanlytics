@@ -29,7 +29,6 @@ export default function LiveMap() {
           zoom: 11,
           center: { lat: 40.7128, lng: -74.006 }, // reasonable default; first live pin re-centers it below
           disableDefaultUI: false,
-          styles: [{ elementType: "geometry", stylers: [{ color: "#1a2530" }] }], // subtle dark base, safe fallback if unstyled
         });
         infoWindowRef.current = new google.maps.InfoWindow();
         setMapsReady(true);
