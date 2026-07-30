@@ -183,6 +183,7 @@ export const appRouter = router({
         vanNumber: z.string().min(1),
         vin: z.string().min(1).max(17),
         licensePlate: z.string().optional(),
+        ezpassTag: z.string().optional(),
         year: z.number().min(1990).max(2030),
         make: z.string().min(1),
         model: z.string().min(1),
@@ -219,6 +220,7 @@ export const appRouter = router({
         vanNumber: z.string().optional(),
         vin: z.string().optional(),
         licensePlate: z.string().nullable().optional(),
+        ezpassTag: z.string().nullable().optional(),
         year: z.number().optional(),
         make: z.string().optional(),
         model: z.string().optional(),
@@ -1215,6 +1217,73 @@ export const appRouter = router({
     getLocations: orgProcedure.query(async ({ ctx }) => {
       return db.getLiveDriverLocations(ctx.organizationId);
     }),
+  }),
+
+  // ============ TOLLS (E-ZPass) ============
+  tolls: router({
+    createImport: orgProcedure
+      .input(z.object({
+        fileName: z.string(),
+        fileBase64: z.string().optional(),
+        contentType: z.string().optional(),
+        rows: z.array(z.object({
+          tagNumber: z.string().optional(),
+          licensePlate: z.string().optional(),
+          transactionAt: z.number(),
+          entryPlaza: z.string().optional(),
+          exitPlaza: z.string().optional(),
+          agency: z.string().optional(),
+          amount: z.number(),
+          notes: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        let fileUrl: string | undefined;
+        let fileKey: string | undefined;
+        if (input.fileBase64 && input.contentType) {
+          const buffer = Buffer.from(input.fileBase64, "base64");
+          const key = `tolls/imports/${ctx.organizationId}/${Date.now()}-${input.fileName}`;
+          const stored = await storagePut(key, buffer, input.contentType);
+          fileUrl = stored.url;
+          fileKey = stored.key;
+        }
+
+        const importResult = await db.createTollImport(ctx.organizationId, {
+          fileName: input.fileName,
+          fileUrl,
+          fileKey,
+          uploadedByUserId: ctx.user.id,
+          rowCount: input.rows.length,
+        });
+
+        const result = await db.createTollTransactionsBulk(
+          ctx.organizationId,
+          importResult.id,
+          input.rows.map(r => ({
+            tagNumber: r.tagNumber,
+            licensePlate: r.licensePlate,
+            transactionAt: new Date(r.transactionAt),
+            entryPlaza: r.entryPlaza,
+            exitPlaza: r.exitPlaza,
+            agency: r.agency,
+            amount: String(r.amount),
+            notes: r.notes,
+          }))
+        );
+
+        return { importId: importResult.id, count: result.count, matchedCount: result.matchedCount } as const;
+      }),
+    list: orgProcedure
+      .input(z.object({ startDate: z.number().optional(), endDate: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        return db.getTollTransactions(ctx.organizationId, input);
+      }),
+    delete: orgProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteTollTransaction(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
   }),
 
   // ============ ALERTS ============

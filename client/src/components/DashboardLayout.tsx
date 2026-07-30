@@ -41,6 +41,7 @@ import {
   UserCircle,
   Gauge,
   MapPin,
+  Receipt,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -60,6 +61,7 @@ const menuItems = [
   { icon: UserCircle, label: "Driver Abstracts", path: "/drivers" },
   { icon: Gauge, label: "Mileage Analysis", path: "/mileage-analysis" },
   { icon: MapPin, label: "Live Map", path: "/live-map" },
+  { icon: Receipt, label: "Tolls", path: "/tolls" },
   { icon: Store, label: "Shops", path: "/shops" },
   { icon: DollarSign, label: "Costs", path: "/costs" },
   { icon: Bell, label: "Alerts", path: "/alerts" },

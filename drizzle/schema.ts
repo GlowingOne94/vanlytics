@@ -112,6 +112,7 @@ export const vehicles = mysqlTable("vehicles", {
   vanNumber: varchar("vanNumber", { length: 20 }).notNull(),
   vin: varchar("vin", { length: 17 }).notNull(),
   licensePlate: varchar("licensePlate", { length: 20 }),
+  ezpassTag: varchar("ezpassTag", { length: 30 }),
   year: int("year").notNull(),
   make: varchar("make", { length: 50 }).default("Ford").notNull(),
   model: varchar("model", { length: 50 }).default("Transit Ambulette").notNull(),
@@ -570,3 +571,47 @@ export const driverLocations = mysqlTable("driver_locations", {
 
 export type DriverLocation = typeof driverLocations.$inferSelect;
 export type InsertDriverLocation = typeof driverLocations.$inferInsert;
+
+/* ============================================================
+ * TOLLS (E-ZPass statement import)
+ * ============================================================
+ */
+
+export const tollImports = mysqlTable("toll_imports", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileUrl: text("fileUrl"),
+  fileKey: varchar("fileKey", { length: 255 }),
+  uploadedByUserId: int("uploadedByUserId").notNull(),
+  rowCount: int("rowCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TollImport = typeof tollImports.$inferSelect;
+export type InsertTollImport = typeof tollImports.$inferInsert;
+
+/**
+ * Toll Transactions - one row per E-ZPass crossing. vehicleId is resolved
+ * at import time by matching tagNumber (preferred) or licensePlate against
+ * the fleet — left null when nothing matches, so unmatched transactions
+ * stay visible rather than silently disappearing.
+ */
+export const tollTransactions = mysqlTable("toll_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  importId: int("importId"),
+  vehicleId: int("vehicleId"),
+  tagNumber: varchar("tagNumber", { length: 30 }),
+  licensePlate: varchar("licensePlate", { length: 20 }),
+  transactionAt: timestamp("transactionAt").notNull(),
+  entryPlaza: varchar("entryPlaza", { length: 150 }),
+  exitPlaza: varchar("exitPlaza", { length: 150 }),
+  agency: varchar("agency", { length: 100 }),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TollTransaction = typeof tollTransactions.$inferSelect;
+export type InsertTollTransaction = typeof tollTransactions.$inferInsert;

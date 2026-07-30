@@ -62,6 +62,7 @@ export default function Vehicles() {
     make: "",
     model: "",
     licensePlate: "",
+    ezpassTag: "",
     engine: "",
     transmission: "",
     assignedDriver: "",
@@ -98,6 +99,7 @@ export default function Vehicles() {
       make: form.make.trim(),
       model: form.model.trim(),
       licensePlate: form.licensePlate || undefined,
+      ezpassTag: form.ezpassTag || undefined,
       engine: form.engine || undefined,
       transmission: form.transmission || undefined,
       assignedDriver: form.assignedDriver || undefined,
@@ -177,6 +179,14 @@ export default function Vehicles() {
                     placeholder="Plate #"
                     value={form.licensePlate}
                     onChange={(e) => setForm({ ...form, licensePlate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>E-ZPass Tag #</Label>
+                  <Input
+                    placeholder="Tag #"
+                    value={form.ezpassTag}
+                    onChange={(e) => setForm({ ...form, ezpassTag: e.target.value })}
                   />
                 </div>
                 <div>

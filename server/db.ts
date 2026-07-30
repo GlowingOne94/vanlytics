@@ -25,6 +25,8 @@ import {
   driverDevices, DriverDevice, InsertDriverDevice,
   driverShifts, DriverShift, InsertDriverShift,
   driverLocations, DriverLocation, InsertDriverLocation,
+  tollImports, TollImport, InsertTollImport,
+  tollTransactions, TollTransaction, InsertTollTransaction,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1774,4 +1776,71 @@ export async function getMileageAnalysis(organizationId: number, opts?: { startD
   }));
 
   return { byVehicle, byDriver, detail };
+}
+
+// ============ TOLLS (E-ZPass) HELPERS ============
+
+export async function createTollImport(organizationId: number, data: Omit<InsertTollImport, "organizationId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(tollImports).values({ ...data, organizationId });
+  return { id: result[0].insertId };
+}
+
+const normalizeForMatch = (s: string | null | undefined) => (s ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
+
+export async function createTollTransactionsBulk(
+  organizationId: number,
+  importId: number | null,
+  rows: Omit<InsertTollTransaction, "organizationId" | "importId" | "vehicleId">[],
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (rows.length === 0) return { count: 0, matchedCount: 0 };
+
+  const vehicles = await getVehicles(organizationId);
+  const byTag = new Map(vehicles.filter(v => v.ezpassTag).map(v => [normalizeForMatch(v.ezpassTag), v]));
+  const byPlate = new Map(vehicles.filter(v => v.licensePlate).map(v => [normalizeForMatch(v.licensePlate), v]));
+
+  let matchedCount = 0;
+  const withVehicle = rows.map(r => {
+    const tagMatch = r.tagNumber ? byTag.get(normalizeForMatch(r.tagNumber)) : undefined;
+    const plateMatch = !tagMatch && r.licensePlate ? byPlate.get(normalizeForMatch(r.licensePlate)) : undefined;
+    const vehicle = tagMatch ?? plateMatch;
+    if (vehicle) matchedCount++;
+    return { ...r, organizationId, importId, vehicleId: vehicle?.id ?? null };
+  });
+
+  await db.insert(tollTransactions).values(withVehicle);
+  return { count: rows.length, matchedCount };
+}
+
+export async function getTollTransactions(organizationId: number, opts?: { startDate?: number; endDate?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(tollTransactions.organizationId, organizationId)];
+  if (opts?.startDate) conditions.push(gte(tollTransactions.transactionAt, new Date(opts.startDate)));
+  if (opts?.endDate) conditions.push(lte(tollTransactions.transactionAt, new Date(opts.endDate)));
+
+  const rows = await db.select().from(tollTransactions).where(and(...conditions)).orderBy(desc(tollTransactions.transactionAt));
+  const vehicles = await getVehicles(organizationId);
+
+  return rows.map(r => ({
+    id: r.id,
+    vanNumber: vehicles.find(v => v.id === r.vehicleId)?.vanNumber ?? null,
+    tagNumber: r.tagNumber,
+    licensePlate: r.licensePlate,
+    transactionAt: r.transactionAt,
+    entryPlaza: r.entryPlaza,
+    exitPlaza: r.exitPlaza,
+    agency: r.agency,
+    amount: parseFloat(r.amount),
+    notes: r.notes,
+  }));
+}
+
+export async function deleteTollTransaction(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(tollTransactions).where(and(eq(tollTransactions.id, id), eq(tollTransactions.organizationId, organizationId)));
 }

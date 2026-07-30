@@ -111,6 +111,7 @@ export default function VehicleDetail() {
         vanNumber: vehicle.vanNumber,
         vin: vehicle.vin,
         licensePlate: vehicle.licensePlate || "",
+        ezpassTag: vehicle.ezpassTag || "",
         year: vehicle.year,
         make: vehicle.make,
         model: vehicle.model,
@@ -277,6 +278,10 @@ export default function VehicleDetail() {
                     <Input value={editForm.licensePlate} onChange={(e) => setEditForm({ ...editForm, licensePlate: e.target.value })} />
                   </div>
                   <div>
+                    <Label>E-ZPass Tag #</Label>
+                    <Input value={editForm.ezpassTag} onChange={(e) => setEditForm({ ...editForm, ezpassTag: e.target.value })} />
+                  </div>
+                  <div>
                     <Label>Year</Label>
                     <Input type="number" value={editForm.year} onChange={(e) => setEditForm({ ...editForm, year: e.target.value })} />
                   </div>
@@ -358,6 +363,7 @@ export default function VehicleDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   <InfoRow label="VIN" value={vehicle.vin} />
                   <InfoRow label="License Plate" value={vehicle.licensePlate || "—"} />
+                  <InfoRow label="E-ZPass Tag #" value={vehicle.ezpassTag || "—"} />
                   <InfoRow label="Year" value={String(vehicle.year)} />
                   <InfoRow label="Make / Model" value={`${vehicle.make} ${vehicle.model}`} />
                   <InfoRow label="Mileage" value={`${vehicle.mileage.toLocaleString()} mi`} />
