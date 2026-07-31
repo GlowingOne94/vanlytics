@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { loadGoogleMaps } from "@/lib/googleMaps";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MapPin } from "lucide-react";
 
@@ -117,6 +117,39 @@ export default function LiveMap() {
             <p className="text-sm text-muted-foreground text-center py-4">
               No drivers currently clocked in. The map will populate automatically once someone clocks in from the mobile app.
             </p>
+          )}
+          {mapsReady && locations && locations.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Currently On the Map ({locations.length})</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {locations.map(loc => (
+                  <button
+                    key={loc.driverId}
+                    className="w-full flex items-center justify-between text-sm py-2 px-2 -mx-2 rounded-md border-b last:border-0 hover:bg-muted/50 text-left"
+                    onClick={() => {
+                      const marker = markersRef.current.get(loc.driverId);
+                      if (marker && mapRef.current) {
+                        mapRef.current.panTo({ lat: loc.latitude, lng: loc.longitude });
+                        mapRef.current.setZoom(15);
+                        google.maps.event.trigger(marker, "click");
+                      }
+                    }}
+                  >
+                    <div>
+                      <p className="font-medium">{loc.driverName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {loc.vanNumber ? `Van ${loc.vanNumber}` : "No van on file"}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Updated {new Date(loc.recordedAt).toLocaleTimeString()}
+                    </p>
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
           )}
         </>
       )}
