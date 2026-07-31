@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Wrench, Upload, FileText, AlertCircle, Trash2, Pencil } from "lucide-react";
+import { Plus, Search, Wrench, Upload, FileText, AlertCircle, Trash2, Pencil, Download, Printer } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -257,13 +257,107 @@ export default function Repairs() {
     }
   };
 
+  const [vehicleFilter, setVehicleFilter] = useState("all");
+
   const filtered = repairs?.filter(
     (r) =>
-      (r.complaint || "").toLowerCase().includes(search.toLowerCase()) ||
+      (vehicleFilter === "all" || String(r.vehicleId) === vehicleFilter) &&
+      ((r.complaint || "").toLowerCase().includes(search.toLowerCase()) ||
       (r.diagnosis || "").toLowerCase().includes(search.toLowerCase()) ||
       (r.mechanic || "").toLowerCase().includes(search.toLowerCase()) ||
-      (r.category || "").toLowerCase().includes(search.toLowerCase())
+      (r.category || "").toLowerCase().includes(search.toLowerCase()))
   );
+
+  const exportRepairsCsv = () => {
+    if (!filtered || filtered.length === 0) {
+      toast.error("Nothing to export for the current filter");
+      return;
+    }
+    const csvField = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+    const headers = ["Van #", "Date", "Category", "Complaint", "Diagnosis", "Shop", "Mechanic", "Parts", "Labor", "Tax", "Total"];
+    const lines = filtered.map(r => {
+      const vehicle = vehicles?.find(v => v.id === r.vehicleId);
+      const shop = shops?.find(s => s.id === r.shopId);
+      return [
+        vehicle?.vanNumber || "Unknown",
+        new Date(r.date).toLocaleDateString(),
+        r.category || "",
+        r.complaint || "",
+        r.diagnosis || "",
+        shop?.name || "",
+        r.mechanic || "",
+        r.partsCost || "0",
+        r.laborCost || "0",
+        r.tax || "0",
+        r.totalCost || "0",
+      ].map(v => csvField(String(v))).join(",");
+    });
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const vanLabel = vehicleFilter === "all" ? "all-vans" : `van-${vehicles?.find(v => String(v.id) === vehicleFilter)?.vanNumber || vehicleFilter}`;
+    a.download = `repairs-${vanLabel}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printRepairsPdf = () => {
+    if (!filtered || filtered.length === 0) {
+      toast.error("Nothing to print for the current filter");
+      return;
+    }
+    const rows = filtered.map(r => {
+      const vehicle = vehicles?.find(v => v.id === r.vehicleId);
+      const shop = shops?.find(s => s.id === r.shopId);
+      return `
+        <tr>
+          <td>Van ${vehicle?.vanNumber || "Unknown"}</td>
+          <td>${new Date(r.date).toLocaleDateString()}</td>
+          <td>${r.category || ""}</td>
+          <td>${r.complaint || ""}</td>
+          <td>${shop?.name || ""}</td>
+          <td>$${r.totalCost || "0"}</td>
+        </tr>
+      `;
+    }).join("");
+    const vanLabel = vehicleFilter === "all" ? "All Vans" : `Van ${vehicles?.find(v => String(v.id) === vehicleFilter)?.vanNumber || vehicleFilter}`;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Please allow pop-ups to print this list");
+      return;
+    }
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Vanlytics — Repair History</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 32px; color: #111; }
+            h1 { font-size: 20px; margin-bottom: 4px; }
+            p.meta { color: #555; font-size: 13px; margin-top: 0; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #ddd; font-size: 13px; }
+            th { background: #f3f3f3; }
+          </style>
+        </head>
+        <body>
+          <h1>Vanlytics — Repair History (${vanLabel})</h1>
+          <p class="meta">Printed: ${new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · ${filtered.length} repair${filtered.length === 1 ? "" : "s"}</p>
+          <table>
+            <thead>
+              <tr><th>Van #</th><th>Date</th><th>Category</th><th>Complaint</th><th>Shop</th><th>Total</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
 
   return (
     <div className="space-y-6">
@@ -423,9 +517,30 @@ export default function Repairs() {
         </Dialog>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Search repairs..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Label className="text-xs">Search</Label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search repairs..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs">Van</Label>
+          <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Vans</SelectItem>
+              {vehicles?.map(v => <SelectItem key={v.id} value={String(v.id)}>Van {v.vanNumber}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button variant="outline" size="sm" onClick={exportRepairsCsv}>
+          <Download className="h-4 w-4 mr-1" /> Export CSV
+        </Button>
+        <Button variant="outline" size="sm" onClick={printRepairsPdf}>
+          <Printer className="h-4 w-4 mr-1" /> Print / PDF
+        </Button>
       </div>
 
       {/* Repair List */}
