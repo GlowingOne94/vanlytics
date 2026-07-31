@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter, Plus, Search, Truck } from "lucide-react";
+import { Filter, Plus, Search, Truck, Printer } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -107,6 +107,53 @@ export default function Vehicles() {
     });
   };
 
+  const printTagList = () => {
+    const rows = (vehicles ?? [])
+      .slice()
+      .sort((a, b) => a.vanNumber.localeCompare(b.vanNumber, undefined, { numeric: true }))
+      .map(v => `
+        <tr>
+          <td>${v.vanNumber}</td>
+          <td>${v.licensePlate || "—"}</td>
+          <td>${v.ezpassTag || "—"}</td>
+        </tr>
+      `).join("");
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Please allow pop-ups to print this list");
+      return;
+    }
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Vanlytics — E-ZPass Tag List</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 32px; color: #111; }
+            h1 { font-size: 20px; margin-bottom: 4px; }
+            p.meta { color: #555; font-size: 13px; margin-top: 0; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #ddd; font-size: 14px; }
+            th { background: #f3f3f3; }
+          </style>
+        </head>
+        <body>
+          <h1>Vanlytics — E-ZPass Tag List</h1>
+          <p class="meta">Printed: ${new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+          <table>
+            <thead>
+              <tr><th>Van #</th><th>License Plate</th><th>E-ZPass Tag #</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -116,13 +163,17 @@ export default function Vehicles() {
             {vehicles?.length ?? 0} vehicles in fleet
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="h-4 w-4 mr-1" /> Add Vehicle
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={printTagList}>
+            <Printer className="h-4 w-4 mr-1" /> Print Tag List
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-1" /> Add Vehicle
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Add New Vehicle</DialogTitle>
             </DialogHeader>
@@ -237,6 +288,7 @@ export default function Vehicles() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Search + Filter */}

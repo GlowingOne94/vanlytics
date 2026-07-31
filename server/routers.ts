@@ -1227,11 +1227,12 @@ export const appRouter = router({
         fileBase64: z.string().optional(),
         contentType: z.string().optional(),
         rows: z.array(z.object({
-          tagNumber: z.string().optional(),
-          licensePlate: z.string().optional(),
+          tagOrPlate: z.string().optional(),
+          referenceId: z.string().optional(),
           transactionAt: z.number(),
           entryPlaza: z.string().optional(),
           exitPlaza: z.string().optional(),
+          vehicleClass: z.string().optional(),
           agency: z.string().optional(),
           amount: z.number(),
           notes: z.string().optional(),
@@ -1260,11 +1261,12 @@ export const appRouter = router({
           ctx.organizationId,
           importResult.id,
           input.rows.map(r => ({
-            tagNumber: r.tagNumber,
-            licensePlate: r.licensePlate,
+            tagOrPlate: r.tagOrPlate,
+            referenceId: r.referenceId,
             transactionAt: new Date(r.transactionAt),
             entryPlaza: r.entryPlaza,
             exitPlaza: r.exitPlaza,
+            vehicleClass: r.vehicleClass,
             agency: r.agency,
             amount: String(r.amount),
             notes: r.notes,
@@ -1282,6 +1284,18 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteTollTransaction(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+    deleteMany: orgProcedure
+      .input(z.object({ ids: z.array(z.number()) }))
+      .mutation(async ({ input, ctx }) => {
+        const result = await db.deleteTollTransactionsBulk(ctx.organizationId, input.ids);
+        return { success: true, count: result.count } as const;
+      }),
+    deleteAllInRange: orgProcedure
+      .input(z.object({ startDate: z.number().optional(), endDate: z.number().optional() }).optional())
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteTollTransactionsInRange(ctx.organizationId, input);
         return { success: true } as const;
       }),
   }),

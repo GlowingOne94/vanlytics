@@ -15,6 +15,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Receipt, Upload, AlertTriangle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -27,29 +28,33 @@ function endOfDay(ms: number) {
   return startOfDay(ms) + (24 * 60 * 60 * 1000 - 1);
 }
 
+// Matches the real E-ZPass statement export format: one combined Tag/Plate
+// column (it doesn't say which), a Class code, Entry/Exit Plaza, a Date
+// column, a separate Exit Time column, and an Amount that comes through as
+// a negative dollar figure (e.g. "$-7.46").
 const TARGET_FIELDS: { key: string; label: string; required: boolean }[] = [
-  { key: "tagNumber", label: "Tag #", required: false },
-  { key: "licensePlate", label: "License Plate", required: false },
+  { key: "tagOrPlate", label: "Tag/Plate #", required: false },
+  { key: "referenceId", label: "Lane Txn ID", required: false },
   { key: "transactionDate", label: "Date", required: true },
-  { key: "transactionTime", label: "Time (if separate column)", required: false },
+  { key: "transactionTime", label: "Exit Time", required: false },
   { key: "entryPlaza", label: "Entry Plaza", required: false },
   { key: "exitPlaza", label: "Exit Plaza", required: false },
-  { key: "agency", label: "Agency / Facility", required: false },
+  { key: "vehicleClass", label: "Class", required: false },
+  { key: "agency", label: "Agency", required: false },
   { key: "amount", label: "Amount", required: true },
-  { key: "notes", label: "Notes", required: false },
 ];
 
 function guessColumn(headers: string[], key: string): string | null {
   const patterns: Record<string, RegExp> = {
-    tagNumber: /tag\s*#?|transponder/i,
-    licensePlate: /plate/i,
-    transactionDate: /date/i,
+    tagOrPlate: /tag\s*\/?\s*plate|transponder/i,
+    referenceId: /txn\s*id|transaction\s*id|lane/i,
+    transactionDate: /^date$|transaction\s*date|posting\s*date/i,
     transactionTime: /time/i,
-    entryPlaza: /entry/i,
-    exitPlaza: /exit/i,
+    entryPlaza: /entry\s*plaza|^entry$/i,
+    exitPlaza: /exit\s*plaza|^exit$/i,
+    vehicleClass: /class/i,
     agency: /agency|facility/i,
     amount: /amount|charge|toll/i,
-    notes: /note|description|type/i,
   };
   const pattern = patterns[key];
   if (!pattern) return null;
@@ -90,11 +95,21 @@ function combineDateAndTime(dateRaw: unknown, timeRaw: unknown): number {
   return base.getTime();
 }
 
+// E-ZPass reports charges as negative ("$-7.46") — stored and displayed as
+// a positive charge amount, consistent with every other cost field in Vanlytics.
+function parseAmount(raw: unknown): number {
+  if (typeof raw === "number") return Math.abs(raw);
+  const cleaned = String(raw).replace(/[^0-9.-]/g, "");
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : Math.abs(parsed);
+}
+
 export default function Tolls() {
   const today = startOfDay(Date.now());
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(endOfDay(today));
   const [importOpen, setImportOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const utils = trpc.useUtils();
   const { data: transactions, isLoading } = trpc.tolls.list.useQuery({ startDate, endDate });
@@ -106,6 +121,43 @@ export default function Tolls() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const deleteManyMutation = trpc.tolls.deleteMany.useMutation({
+    onSuccess: (result) => {
+      utils.tolls.list.invalidate();
+      setSelectedIds(new Set());
+      toast.success(`${result.count} transaction${result.count === 1 ? "" : "s"} removed`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteAllInRangeMutation = trpc.tolls.deleteAllInRange.useMutation({
+    onSuccess: () => {
+      utils.tolls.list.invalidate();
+      setSelectedIds(new Set());
+      toast.success("All transactions in this range removed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = Boolean(transactions?.length) && transactions!.every(t => selectedIds.has(t.id));
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set((transactions ?? []).map(t => t.id)));
+    }
+  };
+
+  const rangeLabel = `${new Date(startDate).toLocaleDateString()} – ${new Date(endDate).toLocaleDateString()}`;
 
   const summary = useMemo(() => {
     const rows = transactions ?? [];
@@ -162,15 +214,47 @@ export default function Tolls() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
       ) : !transactions || transactions.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-12">No toll transactions in this date range.</p>
       ) : (
-        <div className="space-y-2">
+        <>
+          <div className="flex items-center justify-between flex-wrap gap-2 p-2 rounded-md border bg-muted/20">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
+              Select all ({transactions.length})
+            </label>
+            <div className="flex items-center gap-2">
+              {selectedIds.size > 0 && (
+                <Button
+                  size="sm" variant="outline" className="text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    if (!window.confirm(`Delete ${selectedIds.size} selected transaction${selectedIds.size === 1 ? "" : "s"}?`)) return;
+                    deleteManyMutation.mutate({ ids: Array.from(selectedIds) });
+                  }}
+                  disabled={deleteManyMutation.isPending}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Selected ({selectedIds.size})
+                </Button>
+              )}
+              <Button
+                size="sm" variant="outline" className="text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  if (!window.confirm(`Delete ALL ${transactions.length} transactions from ${rangeLabel}? This can't be undone.`)) return;
+                  deleteAllInRangeMutation.mutate({ startDate, endDate });
+                }}
+                disabled={deleteAllInRangeMutation.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete All in Range
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
           {transactions.map(t => (
             <Card key={t.id}>
               <CardContent className="p-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
+                  <Checkbox checked={selectedIds.has(t.id)} onCheckedChange={() => toggleSelected(t.id)} />
                   {t.vanNumber ? (
                     <Badge variant="outline">Van {t.vanNumber}</Badge>
                   ) : (
@@ -180,13 +264,14 @@ export default function Tolls() {
                   )}
                   <div>
                     <p className="text-sm font-medium">
-                      {t.entryPlaza || "Unknown plaza"}{t.exitPlaza ? ` → ${t.exitPlaza}` : ""}
+                      {t.entryPlaza ? `${t.entryPlaza} → ` : ""}{t.exitPlaza || "Unknown plaza"}
+                      {t.vehicleClass && <span className="text-muted-foreground font-normal"> · Class {t.vehicleClass}</span>}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(t.transactionAt).toLocaleString()}
-                      {t.tagNumber ? ` · Tag ${t.tagNumber}` : ""}
-                      {t.licensePlate ? ` · Plate ${t.licensePlate}` : ""}
+                      {t.tagOrPlate ? ` · Tag/Plate ${t.tagOrPlate.trim()}` : ""}
                       {t.agency ? ` · ${t.agency}` : ""}
+                      {t.referenceId ? ` · Ref ${t.referenceId}` : ""}
                     </p>
                   </div>
                 </div>
@@ -202,7 +287,8 @@ export default function Tolls() {
               </CardContent>
             </Card>
           ))}
-        </div>
+          </div>
+        </>
       )}
 
       <TollImportDialog open={importOpen} onOpenChange={setImportOpen} />
@@ -267,17 +353,15 @@ function TollImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
     const mappedRows = rows.map(row => {
       const get = (key: string) => (mapping[key] ? row[mapping[key]] : undefined);
-      const amountRaw = get("amount");
-      const amount = typeof amountRaw === "number" ? amountRaw : parseFloat(String(amountRaw).replace(/[^0-9.-]/g, "")) || 0;
       return {
-        tagNumber: get("tagNumber") ? String(get("tagNumber")) : undefined,
-        licensePlate: get("licensePlate") ? String(get("licensePlate")) : undefined,
+        tagOrPlate: get("tagOrPlate") ? String(get("tagOrPlate")).trim() : undefined,
+        referenceId: get("referenceId") ? String(get("referenceId")).trim() : undefined,
         transactionAt: combineDateAndTime(get("transactionDate"), get("transactionTime")),
-        entryPlaza: get("entryPlaza") ? String(get("entryPlaza")) : undefined,
-        exitPlaza: get("exitPlaza") ? String(get("exitPlaza")) : undefined,
-        agency: get("agency") ? String(get("agency")) : undefined,
-        amount,
-        notes: get("notes") ? String(get("notes")) : undefined,
+        entryPlaza: get("entryPlaza") ? String(get("entryPlaza")).trim() || undefined : undefined,
+        exitPlaza: get("exitPlaza") ? String(get("exitPlaza")).trim() || undefined : undefined,
+        vehicleClass: get("vehicleClass") ? String(get("vehicleClass")).trim() || undefined : undefined,
+        agency: get("agency") ? String(get("agency")).trim() || undefined : undefined,
+        amount: parseAmount(get("amount")),
       };
     });
 

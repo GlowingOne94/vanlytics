@@ -602,11 +602,15 @@ export const tollTransactions = mysqlTable("toll_transactions", {
   organizationId: int("organizationId").notNull(),
   importId: int("importId"),
   vehicleId: int("vehicleId"),
-  tagNumber: varchar("tagNumber", { length: 30 }),
-  licensePlate: varchar("licensePlate", { length: 20 }),
+  // E-ZPass statements report a single combined Tag/Plate # column — it
+  // isn't labeled which one it actually is, so this is matched against
+  // both a vehicle's ezpassTag and licensePlate at import time.
+  tagOrPlate: varchar("tagOrPlate", { length: 30 }),
+  referenceId: varchar("referenceId", { length: 50 }),
   transactionAt: timestamp("transactionAt").notNull(),
   entryPlaza: varchar("entryPlaza", { length: 150 }),
   exitPlaza: varchar("exitPlaza", { length: 150 }),
+  vehicleClass: varchar("vehicleClass", { length: 20 }),
   agency: varchar("agency", { length: 100 }),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   notes: text("notes"),

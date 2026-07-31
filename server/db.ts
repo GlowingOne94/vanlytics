@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, like, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   alerts, Alert, InsertAlert,
@@ -1804,9 +1804,10 @@ export async function createTollTransactionsBulk(
 
   let matchedCount = 0;
   const withVehicle = rows.map(r => {
-    const tagMatch = r.tagNumber ? byTag.get(normalizeForMatch(r.tagNumber)) : undefined;
-    const plateMatch = !tagMatch && r.licensePlate ? byPlate.get(normalizeForMatch(r.licensePlate)) : undefined;
-    const vehicle = tagMatch ?? plateMatch;
+    const key = normalizeForMatch(r.tagOrPlate);
+    // E-ZPass's export doesn't say whether this value is the tag or the
+    // plate — it's tried against both, since either can identify the vehicle.
+    const vehicle = (key ? byTag.get(key) : undefined) ?? (key ? byPlate.get(key) : undefined);
     if (vehicle) matchedCount++;
     return { ...r, organizationId, importId, vehicleId: vehicle?.id ?? null };
   });
@@ -1828,11 +1829,12 @@ export async function getTollTransactions(organizationId: number, opts?: { start
   return rows.map(r => ({
     id: r.id,
     vanNumber: vehicles.find(v => v.id === r.vehicleId)?.vanNumber ?? null,
-    tagNumber: r.tagNumber,
-    licensePlate: r.licensePlate,
+    tagOrPlate: r.tagOrPlate,
+    referenceId: r.referenceId,
     transactionAt: r.transactionAt,
     entryPlaza: r.entryPlaza,
     exitPlaza: r.exitPlaza,
+    vehicleClass: r.vehicleClass,
     agency: r.agency,
     amount: parseFloat(r.amount),
     notes: r.notes,
@@ -1843,4 +1845,21 @@ export async function deleteTollTransaction(organizationId: number, id: number) 
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(tollTransactions).where(and(eq(tollTransactions.id, id), eq(tollTransactions.organizationId, organizationId)));
+}
+
+export async function deleteTollTransactionsBulk(organizationId: number, ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (ids.length === 0) return { count: 0 };
+  await db.delete(tollTransactions).where(and(eq(tollTransactions.organizationId, organizationId), inArray(tollTransactions.id, ids)));
+  return { count: ids.length };
+}
+
+export async function deleteTollTransactionsInRange(organizationId: number, opts?: { startDate?: number; endDate?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions = [eq(tollTransactions.organizationId, organizationId)];
+  if (opts?.startDate) conditions.push(gte(tollTransactions.transactionAt, new Date(opts.startDate)));
+  if (opts?.endDate) conditions.push(lte(tollTransactions.transactionAt, new Date(opts.endDate)));
+  await db.delete(tollTransactions).where(and(...conditions));
 }
