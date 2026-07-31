@@ -158,26 +158,17 @@ export default function Tolls() {
     });
   };
 
-  const allSelected = Boolean(transactions?.length) && transactions!.every(t => selectedIds.has(t.id));
-  const toggleSelectAll = () => {
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set((transactions ?? []).map(t => t.id)));
-    }
-  };
-
   const rangeLabel = `${new Date(startDate).toLocaleDateString()} – ${new Date(endDate).toLocaleDateString()}`;
 
   const exportCsv = () => {
-    if (!transactions || transactions.length === 0) {
-      toast.error("Nothing to export in this date range");
+    if (displayedTransactions.length === 0) {
+      toast.error("Nothing to export for the current filters");
       return;
     }
     const csvField = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
     const headers = ["Van #", "Tag #/License Plate", "Class", "Date", "Time", "Exit Plaza", "Amount"];
-    const lines = transactions.map(t => [
+    const lines = displayedTransactions.map(t => [
       t.vanNumber || "Unmatched",
       t.tagOrPlate?.trim() || "",
       t.vehicleClass || "",
@@ -203,6 +194,51 @@ export default function Tolls() {
     const unmatched = rows.filter(t => !t.vanNumber).length;
     return { total, count: rows.length, unmatched };
   }, [transactions]);
+
+  const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const [vehicleFilter, setVehicleFilter] = useState("all");
+
+  const vanOptions = useMemo(() => {
+    const vans = new Set((transactions ?? []).map(t => t.vanNumber).filter((v): v is string => Boolean(v)));
+    return Array.from(vans).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [transactions]);
+
+  const displayedTransactions = useMemo(() => {
+    let rows = transactions ?? [];
+
+    if (vehicleFilter === "unmatched") {
+      rows = rows.filter(t => !t.vanNumber);
+    } else if (vehicleFilter !== "all") {
+      rows = rows.filter(t => t.vanNumber === vehicleFilter);
+    }
+
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      rows = rows.filter(t =>
+        t.tagOrPlate?.toLowerCase().includes(q) ||
+        t.exitPlaza?.toLowerCase().includes(q) ||
+        t.entryPlaza?.toLowerCase().includes(q) ||
+        t.agency?.toLowerCase().includes(q) ||
+        t.referenceId?.toLowerCase().includes(q) ||
+        t.vanNumber?.toLowerCase().includes(q)
+      );
+    }
+
+    return [...rows].sort((a, b) => {
+      const diff = new Date(a.transactionAt).getTime() - new Date(b.transactionAt).getTime();
+      return sortOrder === "asc" ? diff : -diff;
+    });
+  }, [transactions, search, sortOrder, vehicleFilter]);
+
+  const allSelected = displayedTransactions.length > 0 && displayedTransactions.every(t => selectedIds.has(t.id));
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(displayedTransactions.map(t => t.id)));
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -259,16 +295,50 @@ export default function Tolls() {
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Unmatched</p><p className="text-xl font-bold">{summary.unmatched}</p></CardContent></Card>
       </div>
 
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="flex-1 min-w-[200px]">
+          <Label className="text-xs">Search</Label>
+          <Input
+            placeholder="Tag/plate, plaza, agency, ref #..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Vehicle</Label>
+          <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Vehicles</SelectItem>
+              <SelectItem value="unmatched">Unmatched Only</SelectItem>
+              {vanOptions.map(v => <SelectItem key={v} value={v}>Van {v}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Sort by Date/Time</Label>
+          <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "asc" | "desc")}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="desc">Newest First</SelectItem>
+              <SelectItem value="asc">Oldest First</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
-      ) : !transactions || transactions.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-12">No toll transactions in this date range.</p>
+      ) : displayedTransactions.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-12">
+          {transactions && transactions.length > 0 ? "No transactions match your search/filter." : "No toll transactions in this date range."}
+        </p>
       ) : (
         <>
           <div className="flex items-center justify-between flex-wrap gap-2 p-2 rounded-md border bg-muted/20">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
-              Select all ({transactions.length})
+              Select all ({displayedTransactions.length})
             </label>
             <div className="flex items-center gap-2">
               {selectedIds.size > 0 && (
@@ -296,7 +366,7 @@ export default function Tolls() {
             </div>
           </div>
           <div className="space-y-2">
-          {transactions.map(t => (
+          {displayedTransactions.map(t => (
             <Card key={t.id}>
               <CardContent className="p-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
