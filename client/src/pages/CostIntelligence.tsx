@@ -19,6 +19,7 @@ export default function CostIntelligence() {
   const dotColor = theme === "dark" ? "#fff" : "#000";
   const { data: monthlySpending, isLoading: loadingMonthly } = trpc.analytics.monthlySpending.useQuery({ months: 12 });
   const { data: costByVehicle, isLoading: loadingVehicle } = trpc.analytics.costByVehicle.useQuery();
+  const { data: costPerMile, isLoading: loadingCostPerMile } = trpc.analytics.costPerMile.useQuery();
   const { data: costByCategory, isLoading: loadingCategory } = trpc.analytics.costByCategory.useQuery();
   const { data: shopComparison } = trpc.analytics.shopComparison.useQuery();
   const { data: averagePricing } = trpc.analytics.averagePricing.useQuery();
@@ -106,7 +107,9 @@ export default function CostIntelligence() {
                   <div key={v.vehicleId} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">Van {v.vanNumber}</span>
-                      <span className="text-xs text-muted-foreground">({v.count} repairs)</span>
+                      <span className="text-xs text-muted-foreground">
+                        (${Math.round(v.repairTotal).toLocaleString()} repairs + ${Math.round(v.tollTotal).toLocaleString()} tolls)
+                      </span>
                     </div>
                     <Badge variant="secondary" className="font-mono">${Math.round(v.total).toLocaleString()}</Badge>
                   </div>
@@ -140,6 +143,40 @@ export default function CostIntelligence() {
               </ResponsiveContainer>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8">No data</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Cost Per Mile */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Truck className="h-4 w-4" /> Cost Per Mile
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingCostPerMile ? (
+              <Skeleton className="h-48" />
+            ) : costPerMile && costPerMile.length > 0 ? (
+              <div className="space-y-3">
+                {costPerMile.slice(0, 10).map((v) => (
+                  <div key={v.vehicleId} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">Van {v.vanNumber}</span>
+                      <span className="text-xs text-muted-foreground">
+                        (${Math.round(v.totalCost).toLocaleString()} / {v.mileage.toLocaleString()} mi)
+                      </span>
+                    </div>
+                    <Badge variant="secondary" className="font-mono">
+                      {v.costPerMile != null ? `$${v.costPerMile.toFixed(2)}/mi` : "—"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No mileage data yet — logged via the driver mobile app's clock in/out
+              </p>
             )}
           </CardContent>
         </Card>

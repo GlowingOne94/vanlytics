@@ -1365,24 +1365,48 @@ export const appRouter = router({
     }),
     costByVehicle: orgProcedure.query(async ({ ctx }) => {
       const orgId = ctx.organizationId;
-      const allRepairs = await db.getRepairs(orgId);
-      const allVehicles = await db.getVehicles(orgId);
-      const costMap: Record<number, { vanNumber: string; total: number; count: number }> = {};
+      const [allRepairs, allTolls, allVehicles] = await Promise.all([
+        db.getRepairs(orgId),
+        db.getTollTransactions(orgId),
+        db.getVehicles(orgId),
+      ]);
+
+      const repairMap = new Map<number, { total: number; count: number }>();
       for (const r of allRepairs) {
-        if (!costMap[r.vehicleId]) {
-          const v = allVehicles.find(v => v.id === r.vehicleId);
-          costMap[r.vehicleId] = { vanNumber: v?.vanNumber || "Unknown", total: 0, count: 0 };
-        }
-        costMap[r.vehicleId].total += parseFloat(r.totalCost || "0");
-        costMap[r.vehicleId].count++;
+        const entry = repairMap.get(r.vehicleId) ?? { total: 0, count: 0 };
+        entry.total += parseFloat(r.totalCost || "0");
+        entry.count++;
+        repairMap.set(r.vehicleId, entry);
       }
-      return Object.entries(costMap).map(([id, data]) => ({
-        vehicleId: parseInt(id),
-        ...data,
-      })).sort((a, b) => b.total - a.total);
+
+      const tollMap = new Map<string, { total: number; count: number }>();
+      for (const t of allTolls) {
+        if (!t.vanNumber) continue;
+        const entry = tollMap.get(t.vanNumber) ?? { total: 0, count: 0 };
+        entry.total += t.amount;
+        entry.count++;
+        tollMap.set(t.vanNumber, entry);
+      }
+
+      return allVehicles
+        .map(v => {
+          const repair = repairMap.get(v.id) ?? { total: 0, count: 0 };
+          const toll = tollMap.get(v.vanNumber) ?? { total: 0, count: 0 };
+          return {
+            vehicleId: v.id,
+            vanNumber: v.vanNumber,
+            repairTotal: Math.round(repair.total * 100) / 100,
+            tollTotal: Math.round(toll.total * 100) / 100,
+            total: Math.round((repair.total + toll.total) * 100) / 100,
+            count: repair.count + toll.count,
+          };
+        })
+        .filter(v => v.total > 0)
+        .sort((a, b) => b.total - a.total);
     }),
     costByCategory: orgProcedure.query(async ({ ctx }) => {
-      const allRepairs = await db.getRepairs(ctx.organizationId);
+      const orgId = ctx.organizationId;
+      const [allRepairs, allTolls] = await Promise.all([db.getRepairs(orgId), db.getTollTransactions(orgId)]);
       const categoryMap: Record<string, { total: number; count: number }> = {};
       for (const r of allRepairs) {
         const cat = r.category || "Uncategorized";
@@ -1390,9 +1414,16 @@ export const appRouter = router({
         categoryMap[cat].total += parseFloat(r.totalCost || "0");
         categoryMap[cat].count++;
       }
+      if (allTolls.length > 0) {
+        categoryMap["Tolls"] = {
+          total: allTolls.reduce((sum, t) => sum + t.amount, 0),
+          count: allTolls.length,
+        };
+      }
       return Object.entries(categoryMap).map(([category, data]) => ({
         category,
-        ...data,
+        total: Math.round(data.total * 100) / 100,
+        count: data.count,
       })).sort((a, b) => b.total - a.total);
     }),
     monthlySpending: orgProcedure
@@ -1400,18 +1431,63 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const now = Date.now();
         const startDate = now - input.months * 30 * 24 * 60 * 60 * 1000;
-        const allRepairs = await db.getRepairsByDateRange(ctx.organizationId, startDate, now);
+        const [allRepairs, allTolls] = await Promise.all([
+          db.getRepairsByDateRange(ctx.organizationId, startDate, now),
+          db.getTollTransactions(ctx.organizationId, { startDate, endDate: now }),
+        ]);
         const monthlyMap: Record<string, number> = {};
         for (const r of allRepairs) {
           const date = new Date(r.date);
           const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
           monthlyMap[key] = (monthlyMap[key] || 0) + parseFloat(r.totalCost || "0");
         }
+        for (const t of allTolls) {
+          const date = new Date(t.transactionAt);
+          const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+          monthlyMap[key] = (monthlyMap[key] || 0) + t.amount;
+        }
         return Object.entries(monthlyMap).map(([month, total]) => ({
           month,
           total: Math.round(total * 100) / 100,
         })).sort((a, b) => a.month.localeCompare(b.month));
       }),
+    costPerMile: orgProcedure.query(async ({ ctx }) => {
+      const orgId = ctx.organizationId;
+      const [allRepairs, allTolls, allVehicles, mileageAnalysis] = await Promise.all([
+        db.getRepairs(orgId),
+        db.getTollTransactions(orgId),
+        db.getVehicles(orgId),
+        db.getMileageAnalysis(orgId),
+      ]);
+
+      const repairMap = new Map<number, number>();
+      for (const r of allRepairs) {
+        repairMap.set(r.vehicleId, (repairMap.get(r.vehicleId) ?? 0) + parseFloat(r.totalCost || "0"));
+      }
+      const tollMap = new Map<string, number>();
+      for (const t of allTolls) {
+        if (!t.vanNumber) continue;
+        tollMap.set(t.vanNumber, (tollMap.get(t.vanNumber) ?? 0) + t.amount);
+      }
+      const milesMap = new Map(mileageAnalysis.byVehicle.map(v => [v.vehicleId, v.totalMiles]));
+
+      return allVehicles
+        .map(v => {
+          const repairCost = repairMap.get(v.id) ?? 0;
+          const tollCost = tollMap.get(v.vanNumber) ?? 0;
+          const totalCost = repairCost + tollCost;
+          const mileage = milesMap.get(v.id) ?? 0;
+          return {
+            vehicleId: v.id,
+            vanNumber: v.vanNumber,
+            totalCost: Math.round(totalCost * 100) / 100,
+            mileage,
+            costPerMile: mileage > 0 ? Math.round((totalCost / mileage) * 10000) / 10000 : null,
+          };
+        })
+        .filter(v => v.mileage > 0)
+        .sort((a, b) => (b.costPerMile ?? 0) - (a.costPerMile ?? 0));
+    }),
     shopComparison: orgProcedure.query(async ({ ctx }) => {
       const orgId = ctx.organizationId;
       const allRepairs = await db.getRepairs(orgId);
