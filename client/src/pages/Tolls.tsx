@@ -140,6 +140,16 @@ export default function Tolls() {
     onError: (err) => toast.error(err.message),
   });
 
+  const rematchMutation = trpc.tolls.rematchUnmatched.useMutation({
+    onSuccess: (result) => {
+      utils.tolls.list.invalidate();
+      toast.success(result.rematchedCount > 0
+        ? `Matched ${result.rematchedCount} previously unmatched transaction${result.rematchedCount === 1 ? "" : "s"}`
+        : "No additional matches found — double check the Tag #/Plate on file for that vehicle");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const toggleSelected = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -175,9 +185,14 @@ export default function Tolls() {
           </h1>
           <p className="text-muted-foreground text-sm mt-1">E-ZPass transactions, matched to your fleet by tag # or license plate</p>
         </div>
-        <Button size="sm" onClick={() => setImportOpen(true)}>
-          <Upload className="h-4 w-4 mr-1" /> Import Statement
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => rematchMutation.mutate()} disabled={rematchMutation.isPending}>
+            {rematchMutation.isPending ? "Re-matching..." : "Re-match Unmatched"}
+          </Button>
+          <Button size="sm" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4 mr-1" /> Import Statement
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-end gap-3 flex-wrap">

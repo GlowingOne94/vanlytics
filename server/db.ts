@@ -1787,7 +1787,14 @@ export async function createTollImport(organizationId: number, data: Omit<Insert
   return { id: result[0].insertId };
 }
 
-const normalizeForMatch = (s: string | null | undefined) => (s ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
+const normalizeForMatch = (s: string | null | undefined) => {
+  let v = (s ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
+  // Tag numbers are purely numeric — a leading zero doesn't change what
+  // physical tag it is, so "08600346549" and "8600346549" should match.
+  // Only applied to all-digit values, so alphanumeric plates are untouched.
+  if (/^\d+$/.test(v)) v = v.replace(/^0+(?=\d)/, "");
+  return v;
+};
 
 export async function createTollTransactionsBulk(
   organizationId: number,
@@ -1839,6 +1846,30 @@ export async function getTollTransactions(organizationId: number, opts?: { start
     amount: parseFloat(r.amount),
     notes: r.notes,
   }));
+}
+
+export async function rematchUnmatchedTollTransactions(organizationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const unmatched = await db.select().from(tollTransactions)
+    .where(and(eq(tollTransactions.organizationId, organizationId), sql`${tollTransactions.vehicleId} is null`));
+  if (unmatched.length === 0) return { rematchedCount: 0 };
+
+  const vehicles = await getVehicles(organizationId);
+  const byTag = new Map(vehicles.filter(v => v.ezpassTag).map(v => [normalizeForMatch(v.ezpassTag), v]));
+  const byPlate = new Map(vehicles.filter(v => v.licensePlate).map(v => [normalizeForMatch(v.licensePlate), v]));
+
+  let rematchedCount = 0;
+  for (const txn of unmatched) {
+    const key = normalizeForMatch(txn.tagOrPlate);
+    const vehicle = (key ? byTag.get(key) : undefined) ?? (key ? byPlate.get(key) : undefined);
+    if (vehicle) {
+      await db.update(tollTransactions).set({ vehicleId: vehicle.id }).where(eq(tollTransactions.id, txn.id));
+      rematchedCount++;
+    }
+  }
+  return { rematchedCount };
 }
 
 export async function deleteTollTransaction(organizationId: number, id: number) {

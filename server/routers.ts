@@ -1298,6 +1298,10 @@ export const appRouter = router({
         await db.deleteTollTransactionsInRange(ctx.organizationId, input);
         return { success: true } as const;
       }),
+    rematchUnmatched: orgProcedure.mutation(async ({ ctx }) => {
+      const result = await db.rematchUnmatchedTollTransactions(ctx.organizationId);
+      return result;
+    }),
   }),
 
   // ============ ALERTS ============
