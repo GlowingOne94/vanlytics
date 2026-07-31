@@ -16,7 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Receipt, Upload, AlertTriangle, Trash2 } from "lucide-react";
+import { Receipt, Upload, AlertTriangle, Trash2, Download } from "lucide-react";
 import { toast } from "sonner";
 
 function startOfDay(ms: number) {
@@ -169,6 +169,34 @@ export default function Tolls() {
 
   const rangeLabel = `${new Date(startDate).toLocaleDateString()} – ${new Date(endDate).toLocaleDateString()}`;
 
+  const exportCsv = () => {
+    if (!transactions || transactions.length === 0) {
+      toast.error("Nothing to export in this date range");
+      return;
+    }
+    const csvField = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+
+    const headers = ["Van #", "Tag #/License Plate", "Class", "Date", "Time", "Exit Plaza", "Amount"];
+    const lines = transactions.map(t => [
+      t.vanNumber || "Unmatched",
+      t.tagOrPlate?.trim() || "",
+      t.vehicleClass || "",
+      new Date(t.transactionAt).toLocaleDateString(),
+      new Date(t.transactionAt).toLocaleTimeString(),
+      t.exitPlaza || "",
+      t.amount.toFixed(2),
+    ].map(v => csvField(String(v))).join(","));
+
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tolls-${toDateInputValue(startDate)}-to-${toDateInputValue(endDate)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const summary = useMemo(() => {
     const rows = transactions ?? [];
     const total = rows.reduce((sum, t) => sum + t.amount, 0);
@@ -186,6 +214,9 @@ export default function Tolls() {
           <p className="text-muted-foreground text-sm mt-1">E-ZPass transactions, matched to your fleet by tag # or license plate</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={exportCsv}>
+            <Download className="h-4 w-4 mr-1" /> Export CSV
+          </Button>
           <Button size="sm" variant="outline" onClick={() => rematchMutation.mutate()} disabled={rematchMutation.isPending}>
             {rematchMutation.isPending ? "Re-matching..." : "Re-match Unmatched"}
           </Button>
