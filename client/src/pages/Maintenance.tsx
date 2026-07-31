@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function Maintenance() {
+  const { isAdmin } = useIsAdmin();
   const { data: services, isLoading: loadingServices } = trpc.maintenance.getServices.useQuery();
   const { data: vehicles, isLoading: loadingVehicles } = trpc.vehicles.list.useQuery();
   const { data: latestByPair, isLoading: loadingLatest } = trpc.maintenance.latestByVehicleAndService.useQuery();
@@ -209,9 +211,11 @@ export default function Maintenance() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className={STATUS_STYLES[r.status].className}>{STATUS_STYLES[r.status].label}</Badge>
+                    {isAdmin && (
                     <Button size="sm" variant="outline" onClick={() => openMarkDone(r.vehicleId, r.serviceId, r.vanNumber, r.serviceName, r.vehicleMileage)}>
                       Mark Done Today
                     </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -280,12 +284,14 @@ export default function Maintenance() {
                         <Badge variant="outline" className={`text-xs ${STATUS_STYLES[r.status].className}`}>
                           {STATUS_STYLES[r.status].label}
                         </Badge>
+                        {isAdmin && (
                         <Button
                           variant="ghost" size="icon" className="h-6 w-6"
                           onClick={() => openMarkDone(r.vehicleId, r.serviceId, r.vanNumber, r.serviceName, r.vehicleMileage)}
                         >
                           <CheckCircle className="h-3.5 w-3.5" />
                         </Button>
+                        )}
                       </div>
                     </div>
                   ))}

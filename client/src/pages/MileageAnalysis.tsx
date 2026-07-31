@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ function groupByDate<T extends { clockInAt: string | number | Date }>(items: T[]
 }
 
 export default function MileageAnalysis() {
+  const { isAdmin } = useIsAdmin();
   const [startDate, setStartDate] = useState<number | null>(null);
   const [endDate, setEndDate] = useState<number | null>(null);
 
@@ -159,6 +161,7 @@ export default function MileageAnalysis() {
                           {s.milesDriven != null && <p>{s.milesDriven.toLocaleString()} mi</p>}
                           {s.hoursWorked != null && <p>{s.hoursWorked} hrs</p>}
                         </div>
+                        {isAdmin && (
                         <Button
                           variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
                           onClick={() => {
@@ -168,6 +171,7 @@ export default function MileageAnalysis() {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
+                        )}
                       </div>
                     </div>
                   ))}

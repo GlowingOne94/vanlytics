@@ -3,8 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BarChart3, Download, TrendingUp, DollarSign, Activity } from "lucide-react";
+import { BarChart3, Download, TrendingUp, DollarSign, Activity, Printer } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
+import { toast } from "sonner";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
@@ -31,24 +32,69 @@ export default function Analytics() {
   const { data: repairFrequency } = trpc.analytics.repairFrequency.useQuery();
   const { data: partsVsLabor } = trpc.analytics.partsVsLabor.useQuery();
 
-  const exportReport = () => {
-    const report = {
-      generatedAt: new Date().toISOString(),
-      monthlySpending,
-      costByVehicle,
-      costByCategory,
-      shopComparison,
-      costPerMile,
-      repairFrequency,
-      partsVsLabor,
-    };
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `fleet-report-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const printReport = () => {
+    const section = (title: string, rows: string, headers: string[]) => `
+      <h2>${title}</h2>
+      <table>
+        <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>${rows || `<tr><td colspan="${headers.length}" class="empty">No data</td></tr>`}</tbody>
+      </table>
+    `;
+
+    const monthlySpendingRows = (monthlySpending ?? []).map(m => `<tr><td>${m.month}</td><td>$${m.total.toLocaleString()}</td></tr>`).join("");
+    const costByVehicleRows = (costByVehicle ?? []).map(v => `<tr><td>Van ${v.vanNumber}</td><td>$${v.repairTotal.toLocaleString()}</td><td>$${v.tollTotal.toLocaleString()}</td><td>$${v.total.toLocaleString()}</td></tr>`).join("");
+    const costByCategoryRows = (costByCategory ?? []).map(c => `<tr><td>${c.category}</td><td>${c.count}</td><td>$${c.total.toLocaleString()}</td></tr>`).join("");
+    const shopComparisonRows = (shopComparison ?? []).map(s => `<tr><td>${s.name}</td><td>${s.count}</td><td>$${s.avgCost.toLocaleString()}</td><td>${s.successRate}%</td></tr>`).join("");
+    const costPerMileRows = (costPerMile ?? []).map(v => `<tr><td>Van ${v.vanNumber}</td><td>${v.mileage.toLocaleString()}</td><td>$${v.totalCost.toLocaleString()}</td><td>$${(v.costPerMile ?? 0).toFixed(4)}</td><td>${new Date(v.trackingStartAt).toLocaleDateString()}</td></tr>`).join("");
+    const repairFrequencyRows = (repairFrequency ?? []).map((f: any) => `<tr><td>${f.month}</td><td>${f.count}</td></tr>`).join("");
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Please allow pop-ups to print this report");
+      return;
+    }
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Vanlytics — Full Analytics Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 32px; color: #111; }
+            h1 { font-size: 22px; margin-bottom: 4px; }
+            h2 { font-size: 15px; margin-top: 32px; margin-bottom: 8px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+            p.meta { color: #555; font-size: 13px; margin-top: 0; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+            th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #ddd; font-size: 13px; }
+            th { background: #f3f3f3; }
+            .empty { text-align: center; color: #999; font-style: italic; }
+            .summary { display: flex; gap: 24px; margin: 12px 0 24px; }
+            .summary div { border: 1px solid #ddd; border-radius: 6px; padding: 10px 16px; }
+            .summary p { margin: 0; }
+            .summary .label { font-size: 11px; color: #666; }
+            .summary .value { font-size: 18px; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h1>Vanlytics — Full Analytics Report</h1>
+          <p class="meta">Generated: ${new Date().toLocaleString()}</p>
+
+          <div class="summary">
+            <div><p class="label">Total Parts</p><p class="value">$${(partsVsLabor?.totalParts ?? 0).toLocaleString()}</p></div>
+            <div><p class="label">Total Labor</p><p class="value">$${(partsVsLabor?.totalLabor ?? 0).toLocaleString()}</p></div>
+            <div><p class="label">Total Tax</p><p class="value">$${(partsVsLabor?.totalTax ?? 0).toLocaleString()}</p></div>
+          </div>
+
+          ${section("Monthly Spending", monthlySpendingRows, ["Month", "Total"])}
+          ${section("Cost by Vehicle", costByVehicleRows, ["Van #", "Repairs", "Tolls", "Total"])}
+          ${section("Cost by Category", costByCategoryRows, ["Category", "Count", "Total"])}
+          ${section("Cost Per Mile", costPerMileRows, ["Van #", "Mileage", "Total Cost", "Cost/Mile", "Since"])}
+          ${section("Shop Comparison", shopComparisonRows, ["Shop", "Repairs", "Avg Cost", "Success Rate"])}
+          ${section("Repair Frequency", repairFrequencyRows, ["Month", "Repairs"])}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   };
 
   const exportCSV = () => {
@@ -79,8 +125,8 @@ export default function Analytics() {
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="h-4 w-4 mr-1" /> CSV
           </Button>
-          <Button variant="outline" size="sm" onClick={exportReport}>
-            <Download className="h-4 w-4 mr-1" /> Full Report
+          <Button variant="outline" size="sm" onClick={printReport}>
+            <Printer className="h-4 w-4 mr-1" /> Full Report
           </Button>
         </div>
       </div>
@@ -246,6 +292,7 @@ export default function Analytics() {
                     <th className="text-right py-2 font-medium">Mileage</th>
                     <th className="text-right py-2 font-medium">Total Cost</th>
                     <th className="text-right py-2 font-medium">Cost/Mile</th>
+                    <th className="text-right py-2 font-medium">Since</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -259,6 +306,7 @@ export default function Analytics() {
                           ${v.costPerMile.toFixed(4)}
                         </Badge>
                       </td>
+                      <td className="text-right py-2 text-xs text-muted-foreground">{new Date(v.trackingStartAt).toLocaleDateString()}</td>
                     </tr>
                   ))}
                 </tbody>

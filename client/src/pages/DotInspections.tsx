@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ const EXPIRING_SOON_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function DotInspections() {
+  const { isAdmin } = useIsAdmin();
   const { data: vehicles, isLoading: loadingVehicles } = trpc.vehicles.list.useQuery();
   const { data: latestByVehicle, isLoading: loadingLatest } = trpc.dotInspections.latestByVehicle.useQuery();
   const utils = trpc.useUtils();
@@ -209,14 +211,16 @@ export default function DotInspections() {
                 <Button size="sm" variant="ghost" onClick={() => setHistoryTarget({ vehicleId: vehicle.id, vanNumber: vehicle.vanNumber })}>
                   <History className="h-3.5 w-3.5 mr-1" /> History
                 </Button>
-                {latest && (
+                {isAdmin && latest && (
                   <Button size="sm" variant="ghost" onClick={() => openEdit(vehicle.id, vehicle.vanNumber, latest)}>
                     <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Latest
                   </Button>
                 )}
+                {isAdmin && (
                 <Button size="sm" variant="outline" onClick={() => openLogNew(vehicle.id, vehicle.vanNumber, vehicle.mileage)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> Log Inspection
                 </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -304,6 +308,8 @@ export default function DotInspections() {
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {isAdmin && (
+                    <>
                     <HistoryRowUploader
                       inspectionId={h.id}
                       hasDocument={Boolean(h.documentUrl)}
@@ -317,6 +323,8 @@ export default function DotInspections() {
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
+                    </>
+                    )}
                   </div>
                 </div>
               ))

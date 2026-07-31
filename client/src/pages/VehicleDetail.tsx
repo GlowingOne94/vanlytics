@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,7 @@ const healthColors: Record<string, string> = {
 };
 
 export default function VehicleDetail() {
+  const { isAdmin } = useIsAdmin();
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const vehicleId = parseInt(params.id || "0");
@@ -245,11 +247,11 @@ export default function VehicleDetail() {
                 <Save className="h-4 w-4 mr-1" /> Save
               </Button>
             </>
-          ) : (
+          ) : isAdmin ? (
             <Button variant="outline" size="sm" onClick={startEditing}>
               <Pencil className="h-4 w-4 mr-1" /> Edit
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
 

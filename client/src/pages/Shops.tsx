@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ const specialtyOptions = [
 ];
 
 export default function Shops() {
+  const { isAdmin } = useIsAdmin();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -160,6 +162,7 @@ export default function Shops() {
           <h1 className="text-2xl font-bold tracking-tight">Shop Directory</h1>
           <p className="text-muted-foreground text-sm mt-1">{shops?.length ?? 0} shops tracked</p>
         </div>
+        {isAdmin && (
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <Button size="sm" onClick={openAddShop}><Plus className="h-4 w-4 mr-1" /> Add Shop</Button>
           <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
@@ -231,6 +234,7 @@ export default function Shops() {
             </div>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="relative max-w-sm">
@@ -265,9 +269,11 @@ export default function Shops() {
                         {shop.recommendation === "yes" ? "Recommended" : shop.recommendation === "no" ? "Not Recommended" : "Maybe"}
                       </Badge>
                     )}
+                    {isAdmin && (
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => openEditShop(shop)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
+                    )}
                   </div>
                 </div>
                 <div className="mt-3 space-y-1.5">

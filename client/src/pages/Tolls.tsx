@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { fileToBase64 } from "@/components/DocumentField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +106,7 @@ function parseAmount(raw: unknown): number {
 }
 
 export default function Tolls() {
+  const { isAdmin } = useIsAdmin();
   const today = startOfDay(Date.now());
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(endOfDay(today));
@@ -253,12 +255,16 @@ export default function Tolls() {
           <Button size="sm" variant="outline" onClick={exportCsv}>
             <Download className="h-4 w-4 mr-1" /> Export CSV
           </Button>
+          {isAdmin && (
+          <>
           <Button size="sm" variant="outline" onClick={() => rematchMutation.mutate()} disabled={rematchMutation.isPending}>
             {rematchMutation.isPending ? "Re-matching..." : "Re-match Unmatched"}
           </Button>
           <Button size="sm" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4 mr-1" /> Import Statement
           </Button>
+          </>
+          )}
         </div>
       </div>
 
@@ -335,6 +341,7 @@ export default function Tolls() {
         </p>
       ) : (
         <>
+          {isAdmin && (
           <div className="flex items-center justify-between flex-wrap gap-2 p-2 rounded-md border bg-muted/20">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
@@ -365,12 +372,13 @@ export default function Tolls() {
               </Button>
             </div>
           </div>
+          )}
           <div className="space-y-2">
           {displayedTransactions.map(t => (
             <Card key={t.id}>
               <CardContent className="p-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
-                  <Checkbox checked={selectedIds.has(t.id)} onCheckedChange={() => toggleSelected(t.id)} />
+                  {isAdmin && <Checkbox checked={selectedIds.has(t.id)} onCheckedChange={() => toggleSelected(t.id)} />}
                   {t.vanNumber ? (
                     <Badge variant="outline">Van {t.vanNumber}</Badge>
                   ) : (
@@ -393,12 +401,14 @@ export default function Tolls() {
                 </div>
                 <div className="flex items-center gap-3">
                   <p className="text-sm font-semibold">${t.amount.toFixed(2)}</p>
+                  {isAdmin && (
                   <Button
                     variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
                     onClick={() => { if (window.confirm("Remove this toll transaction?")) deleteMutation.mutate({ id: t.id }); }}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -164,7 +164,7 @@ export default function CostIntelligence() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">Van {v.vanNumber}</span>
                       <span className="text-xs text-muted-foreground">
-                        (${Math.round(v.totalCost).toLocaleString()} / {v.mileage.toLocaleString()} mi)
+                        (${Math.round(v.totalCost).toLocaleString()} / {v.mileage.toLocaleString()} mi, since {new Date(v.trackingStartAt).toLocaleDateString()})
                       </span>
                     </div>
                     <Badge variant="secondary" className="font-mono">

@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ type AlertItem = {
 };
 
 export default function Alerts() {
+  const { isAdmin } = useIsAdmin();
   const { data: alerts, isLoading } = trpc.alerts.list.useQuery();
   const utils = trpc.useUtils();
   const hasAutoChecked = useRef(false);
@@ -65,13 +67,14 @@ export default function Alerts() {
 
   // Check for new alerts once automatically when this page loads, so alerts
   // stay current without anyone having to remember to click "Check Now".
+  // Members can't run this (it's a mutation, admin-only), so skip it for them.
   useEffect(() => {
-    if (!hasAutoChecked.current) {
+    if (isAdmin && !hasAutoChecked.current) {
       hasAutoChecked.current = true;
       checkAlertsMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAdmin]);
 
   const vehicleAlerts = (alerts ?? []).filter(a => VEHICLE_TYPES.has(a.type));
   const driverAlerts = (alerts ?? []).filter(a => DRIVER_TYPES.has(a.type));
@@ -89,6 +92,8 @@ export default function Alerts() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && (
+          <>
           <Button
             variant="outline"
             size="sm"
@@ -109,6 +114,8 @@ export default function Alerts() {
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${checkAlertsMutation.isPending ? "animate-spin" : ""}`} />
             {checkAlertsMutation.isPending ? "Checking..." : "Check Now"}
           </Button>
+          </>
+          )}
         </div>
       </div>
 
@@ -134,6 +141,7 @@ export default function Alerts() {
             <AlertList
               alerts={vehicleAlerts}
               emptyText="No registration or insurance expirations to flag right now."
+              isAdmin={isAdmin}
               onMarkRead={(id) => markReadMutation.mutate({ id })}
               onDismiss={(id) => dismissMutation.mutate({ id })}
             />
@@ -142,6 +150,7 @@ export default function Alerts() {
             <AlertList
               alerts={driverAlerts}
               emptyText="No medical, CDL, or abstract reviews coming due right now."
+              isAdmin={isAdmin}
               onMarkRead={(id) => markReadMutation.mutate({ id })}
               onDismiss={(id) => dismissMutation.mutate({ id })}
             />
@@ -150,6 +159,7 @@ export default function Alerts() {
             <AlertList
               alerts={repairAlerts}
               emptyText="Nothing here right now."
+              isAdmin={isAdmin}
               onMarkRead={(id) => markReadMutation.mutate({ id })}
               onDismiss={(id) => dismissMutation.mutate({ id })}
             />
@@ -161,10 +171,11 @@ export default function Alerts() {
 }
 
 function AlertList({
-  alerts, emptyText, onMarkRead, onDismiss,
+  alerts, emptyText, isAdmin, onMarkRead, onDismiss,
 }: {
   alerts: AlertItem[];
   emptyText: string;
+  isAdmin: boolean;
   onMarkRead: (id: number) => void;
   onDismiss: (id: number) => void;
 }) {
@@ -202,14 +213,16 @@ function AlertList({
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  {alert.isRead === "no" && (
+                  {isAdmin && alert.isRead === "no" && (
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onMarkRead(alert.id)}>
                       <Check className="h-3 w-3" />
                     </Button>
                   )}
+                  {isAdmin && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDismiss(alert.id)}>
                     <X className="h-3 w-3" />
                   </Button>
+                  )}
                 </div>
               </div>
             </CardContent>

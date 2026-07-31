@@ -178,7 +178,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getVehicleById(ctx.organizationId, input.id);
       }),
-    create: orgProcedure
+    create: adminProcedure
       .input(z.object({
         vanNumber: z.string().min(1),
         vin: z.string().min(1).max(17),
@@ -214,7 +214,7 @@ export const appRouter = router({
         }
         return db.createVehicle(ctx.organizationId, input);
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         vanNumber: z.string().optional(),
@@ -243,13 +243,13 @@ export const appRouter = router({
         await db.updateVehicle(ctx.organizationId, id, data);
         return { success: true };
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteVehicle(ctx.organizationId, input.id);
         return { success: true };
       }),
-    uploadPhoto: orgProcedure
+    uploadPhoto: adminProcedure
       .input(z.object({
         vehicleId: z.number(),
         fileName: z.string(),
@@ -263,7 +263,7 @@ export const appRouter = router({
         await db.updateVehicle(ctx.organizationId, input.vehicleId, { photoUrl: url, photoKey: fileKey });
         return { url, key: fileKey };
       }),
-    uploadDocument: orgProcedure
+    uploadDocument: adminProcedure
       .input(z.object({
         vehicleId: z.number(),
         docType: z.enum(["title", "registration", "insurance"]),
@@ -285,7 +285,7 @@ export const appRouter = router({
         }
         return { url, key: fileKey };
       }),
-    removeDocument: orgProcedure
+    removeDocument: adminProcedure
       .input(z.object({
         vehicleId: z.number(),
         docType: z.enum(["title", "registration", "insurance"]),
@@ -314,7 +314,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getRepairById(ctx.organizationId, input.id);
       }),
-    create: orgProcedure
+    create: adminProcedure
       .input(z.object({
         vehicleId: z.number(),
         shopId: z.number().nullable().optional(),
@@ -370,7 +370,7 @@ export const appRouter = router({
 
         return { ...result, warnings };
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         vehicleId: z.number().optional(),
@@ -431,7 +431,7 @@ export const appRouter = router({
 
         return { success: true };
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteRepair(ctx.organizationId, input.id);
@@ -442,7 +442,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getRepairDocuments(ctx.organizationId, input.repairId);
       }),
-    uploadDocument: orgProcedure
+    uploadDocument: adminProcedure
       .input(z.object({
         repairId: z.number(),
         fileName: z.string(),
@@ -462,7 +462,7 @@ export const appRouter = router({
         });
         return { url, key: fileKey };
       }),
-    deleteDocument: orgProcedure
+    deleteDocument: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteRepairDocument(ctx.organizationId, input.id);
@@ -480,7 +480,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getShopById(ctx.organizationId, input.id);
       }),
-    create: orgProcedure
+    create: adminProcedure
       .input(z.object({
         name: z.string().min(1),
         phone: z.string().optional(),
@@ -494,7 +494,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         return db.createShop(ctx.organizationId, input);
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -512,7 +512,7 @@ export const appRouter = router({
         await db.updateShop(ctx.organizationId, id, data);
         return { success: true };
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteShop(ctx.organizationId, input.id);
@@ -530,7 +530,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getMaintenanceRecords(ctx.organizationId, input?.vehicleId);
       }),
-    createRecord: orgProcedure
+    createRecord: adminProcedure
       .input(z.object({
         vehicleId: z.number(),
         serviceId: z.number(),
@@ -545,7 +545,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         return db.createMaintenanceRecord(ctx.organizationId, input);
       }),
-    deleteRecord: orgProcedure
+    deleteRecord: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteMaintenanceRecord(ctx.organizationId, input.id);
@@ -571,7 +571,7 @@ export const appRouter = router({
     latestByVehicle: orgProcedure.query(async ({ ctx }) => {
       return db.getLatestDotInspectionByVehicle(ctx.organizationId);
     }),
-    create: orgProcedure
+    create: adminProcedure
       .input(z.object({
         vehicleId: z.number(),
         inspectionDate: z.number(),
@@ -592,13 +592,13 @@ export const appRouter = router({
           notes: input.notes,
         });
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDotInspection(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         inspectionDate: z.number().optional(),
@@ -620,7 +620,7 @@ export const appRouter = router({
         await db.updateDotInspection(ctx.organizationId, id, data);
         return { success: true } as const;
       }),
-    uploadDocument: orgProcedure
+    uploadDocument: adminProcedure
       .input(z.object({
         id: z.number(),
         fileName: z.string(),
@@ -634,7 +634,7 @@ export const appRouter = router({
         await db.updateDotInspection(ctx.organizationId, input.id, { documentUrl: url, documentKey: fileKey });
         return { url, key: fileKey };
       }),
-    removeDocument: orgProcedure
+    removeDocument: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.updateDotInspection(ctx.organizationId, input.id, { documentUrl: null, documentKey: null });
@@ -647,7 +647,7 @@ export const appRouter = router({
     list: orgProcedure.query(async ({ ctx }) => {
       return db.getDrivers(ctx.organizationId);
     }),
-    create: orgProcedure
+    create: adminProcedure
       .input(z.object({
         name: z.string().min(1).max(100),
         licenseNumber: z.string().optional(),
@@ -661,7 +661,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         return db.createDriver(ctx.organizationId, input);
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -678,13 +678,13 @@ export const appRouter = router({
         await db.updateDriver(ctx.organizationId, id, data);
         return { success: true } as const;
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriver(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
-    uploadCdlDocument: orgProcedure
+    uploadCdlDocument: adminProcedure
       .input(z.object({
         driverId: z.number(),
         fileName: z.string(),
@@ -698,7 +698,7 @@ export const appRouter = router({
         await db.updateDriver(ctx.organizationId, input.driverId, { cdlDocumentUrl: url, cdlDocumentKey: fileKey });
         return { url, key: fileKey };
       }),
-    removeCdlDocument: orgProcedure
+    removeCdlDocument: adminProcedure
       .input(z.object({ driverId: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.updateDriver(ctx.organizationId, input.driverId, { cdlDocumentUrl: null, cdlDocumentKey: null });
@@ -716,7 +716,7 @@ export const appRouter = router({
     latestByDriver: orgProcedure.query(async ({ ctx }) => {
       return db.getLatestMedicalCertByDriver(ctx.organizationId);
     }),
-    create: orgProcedure
+    create: adminProcedure
       .input(z.object({
         driverId: z.number(),
         examDate: z.number(),
@@ -728,7 +728,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         return db.createDriverMedicalCert(ctx.organizationId, input);
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         examDate: z.number().optional(),
@@ -742,13 +742,13 @@ export const appRouter = router({
         await db.updateDriverMedicalCert(ctx.organizationId, id, data);
         return { success: true } as const;
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriverMedicalCert(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
-    uploadDocument: orgProcedure
+    uploadDocument: adminProcedure
       .input(z.object({
         id: z.number(),
         fileName: z.string(),
@@ -762,7 +762,7 @@ export const appRouter = router({
         await db.updateDriverMedicalCert(ctx.organizationId, input.id, { documentUrl: url, documentKey: fileKey });
         return { url, key: fileKey };
       }),
-    removeDocument: orgProcedure
+    removeDocument: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.updateDriverMedicalCert(ctx.organizationId, input.id, { documentUrl: null, documentKey: null });
@@ -780,7 +780,7 @@ export const appRouter = router({
     latestByDriver: orgProcedure.query(async ({ ctx }) => {
       return db.getLatestAbstractByDriver(ctx.organizationId);
     }),
-    create: orgProcedure
+    create: adminProcedure
       .input(z.object({
         driverId: z.number(),
         pulledDate: z.number(),
@@ -790,7 +790,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         return db.createDriverAbstract(ctx.organizationId, input);
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         pulledDate: z.number().optional(),
@@ -802,13 +802,13 @@ export const appRouter = router({
         await db.updateDriverAbstract(ctx.organizationId, id, data);
         return { success: true } as const;
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriverAbstract(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
-    uploadDocument: orgProcedure
+    uploadDocument: adminProcedure
       .input(z.object({
         id: z.number(),
         fileName: z.string(),
@@ -822,7 +822,7 @@ export const appRouter = router({
         await db.updateDriverAbstract(ctx.organizationId, input.id, { documentUrl: url, documentKey: fileKey });
         return { url, key: fileKey };
       }),
-    removeDocument: orgProcedure
+    removeDocument: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.updateDriverAbstract(ctx.organizationId, input.id, { documentUrl: null, documentKey: null });
@@ -837,7 +837,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getDriverDocuments(ctx.organizationId, input?.driverId);
       }),
-    upload: orgProcedure
+    upload: adminProcedure
       .input(z.object({
         driverId: z.number(),
         category: z.enum(["cdl", "medical", "abstract", "other"]).default("other"),
@@ -862,7 +862,7 @@ export const appRouter = router({
         });
         return { id: result.id, url };
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriverDocument(ctx.organizationId, input.id);
@@ -872,7 +872,7 @@ export const appRouter = router({
 
   // ============ ROUTE PLANNING (Phase 1A) ============
   routePlanning: router({
-    createImport: orgProcedure
+    createImport: adminProcedure
       .input(z.object({
         tripDate: z.number(),
         fileName: z.string(),
@@ -951,13 +951,13 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.suggestTripPairs(ctx.organizationId, input.tripDate);
       }),
-    linkPair: orgProcedure
+    linkPair: adminProcedure
       .input(z.object({ tripAId: z.number(), tripBId: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.linkTripPair(ctx.organizationId, input.tripAId, input.tripBId);
         return { success: true } as const;
       }),
-    unlinkPair: orgProcedure
+    unlinkPair: adminProcedure
       .input(z.object({ tripId: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.unlinkTripPair(ctx.organizationId, input.tripId);
@@ -974,7 +974,7 @@ export const appRouter = router({
         ]);
         return { drivers, vehicles };
       }),
-    assign: orgProcedure
+    assign: adminProcedure
       .input(z.object({
         tripId: z.number(),
         driverId: z.number().nullable(),
@@ -999,7 +999,7 @@ export const appRouter = router({
         });
         return { success: true } as const;
       }),
-    updateStatus: orgProcedure
+    updateStatus: adminProcedure
       .input(z.object({
         tripId: z.number(),
         status: z.enum(["imported", "unassigned", "assigned", "dispatched", "in_progress", "completed", "cancelled", "no_show"]),
@@ -1018,7 +1018,7 @@ export const appRouter = router({
         });
         return { success: true } as const;
       }),
-    update: orgProcedure
+    update: adminProcedure
       .input(z.object({
         id: z.number(),
         jobId: z.string().nullable().optional(),
@@ -1039,7 +1039,7 @@ export const appRouter = router({
         await db.updateTrip(ctx.organizationId, id, data);
         return { success: true } as const;
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteTrip(ctx.organizationId, input.id);
@@ -1204,7 +1204,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getMileageAnalysis(ctx.organizationId, input);
       }),
-    deleteShift: orgProcedure
+    deleteShift: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteDriverShift(ctx.organizationId, input.id);
@@ -1221,7 +1221,7 @@ export const appRouter = router({
 
   // ============ TOLLS (E-ZPass) ============
   tolls: router({
-    createImport: orgProcedure
+    createImport: adminProcedure
       .input(z.object({
         fileName: z.string(),
         fileBase64: z.string().optional(),
@@ -1280,25 +1280,25 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getTollTransactions(ctx.organizationId, input);
       }),
-    delete: orgProcedure
+    delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.deleteTollTransaction(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
-    deleteMany: orgProcedure
+    deleteMany: adminProcedure
       .input(z.object({ ids: z.array(z.number()) }))
       .mutation(async ({ input, ctx }) => {
         const result = await db.deleteTollTransactionsBulk(ctx.organizationId, input.ids);
         return { success: true, count: result.count } as const;
       }),
-    deleteAllInRange: orgProcedure
+    deleteAllInRange: adminProcedure
       .input(z.object({ startDate: z.number().optional(), endDate: z.number().optional() }).optional())
       .mutation(async ({ input, ctx }) => {
         await db.deleteTollTransactionsInRange(ctx.organizationId, input);
         return { success: true } as const;
       }),
-    rematchUnmatched: orgProcedure.mutation(async ({ ctx }) => {
+    rematchUnmatched: adminProcedure.mutation(async ({ ctx }) => {
       const result = await db.rematchUnmatchedTollTransactions(ctx.organizationId);
       return result;
     }),
@@ -1311,19 +1311,19 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getAlerts(ctx.organizationId, input);
       }),
-    markRead: orgProcedure
+    markRead: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.markAlertRead(ctx.organizationId, input.id);
         return { success: true };
       }),
-    dismiss: orgProcedure
+    dismiss: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await db.dismissAlert(ctx.organizationId, input.id);
         return { success: true };
       }),
-    dismissAll: orgProcedure.mutation(async ({ ctx }) => {
+    dismissAll: adminProcedure.mutation(async ({ ctx }) => {
       await db.dismissAllAlerts(ctx.organizationId);
       return { success: true } as const;
     }),
@@ -1354,9 +1354,6 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getRepairFrequencyTrends(ctx.organizationId, input?.months);
       }),
-    costPerMile: orgProcedure.query(async ({ ctx }) => {
-      return db.getCostPerMile(ctx.organizationId);
-    }),
     averagePricing: orgProcedure.query(async ({ ctx }) => {
       return db.getAverageRepairPricing(ctx.organizationId);
     }),
@@ -1453,40 +1450,52 @@ export const appRouter = router({
       }),
     costPerMile: orgProcedure.query(async ({ ctx }) => {
       const orgId = ctx.organizationId;
-      const [allRepairs, allTolls, allVehicles, mileageAnalysis] = await Promise.all([
+      const [allRepairs, allTolls, allVehicles, allShifts] = await Promise.all([
         db.getRepairs(orgId),
         db.getTollTransactions(orgId),
         db.getVehicles(orgId),
-        db.getMileageAnalysis(orgId),
+        db.getDriverShifts(orgId),
       ]);
 
-      const repairMap = new Map<number, number>();
-      for (const r of allRepairs) {
-        repairMap.set(r.vehicleId, (repairMap.get(r.vehicleId) ?? 0) + parseFloat(r.totalCost || "0"));
+      // Per vehicle: total miles from completed shifts, and the earliest
+      // shift's clock-in time. Costs are only counted from that point
+      // forward, so this compares costs and mileage over the same window
+      // instead of all-time costs against only-recently-tracked mileage.
+      const vehicleMileage = new Map<number, { totalMiles: number; trackingStartAt: number }>();
+      for (const s of allShifts) {
+        if (!s.clockOutAt || s.clockOutMileage == null) continue;
+        const miles = s.clockOutMileage - s.clockInMileage;
+        const clockInTime = new Date(s.clockInAt).getTime();
+        const entry = vehicleMileage.get(s.vehicleId) ?? { totalMiles: 0, trackingStartAt: clockInTime };
+        entry.totalMiles += miles;
+        entry.trackingStartAt = Math.min(entry.trackingStartAt, clockInTime);
+        vehicleMileage.set(s.vehicleId, entry);
       }
-      const tollMap = new Map<string, number>();
-      for (const t of allTolls) {
-        if (!t.vanNumber) continue;
-        tollMap.set(t.vanNumber, (tollMap.get(t.vanNumber) ?? 0) + t.amount);
-      }
-      const milesMap = new Map(mileageAnalysis.byVehicle.map(v => [v.vehicleId, v.totalMiles]));
 
-      return allVehicles
-        .map(v => {
-          const repairCost = repairMap.get(v.id) ?? 0;
-          const tollCost = tollMap.get(v.vanNumber) ?? 0;
-          const totalCost = repairCost + tollCost;
-          const mileage = milesMap.get(v.id) ?? 0;
-          return {
-            vehicleId: v.id,
-            vanNumber: v.vanNumber,
-            totalCost: Math.round(totalCost * 100) / 100,
-            mileage,
-            costPerMile: mileage > 0 ? Math.round((totalCost / mileage) * 10000) / 10000 : null,
-          };
-        })
-        .filter(v => v.mileage > 0)
-        .sort((a, b) => (b.costPerMile ?? 0) - (a.costPerMile ?? 0));
+      const results: { vehicleId: number; vanNumber: string; totalCost: number; mileage: number; costPerMile: number | null; trackingStartAt: number }[] = [];
+      for (const v of allVehicles) {
+        const mileageInfo = vehicleMileage.get(v.id);
+        if (!mileageInfo || mileageInfo.totalMiles <= 0) continue;
+
+        const repairCost = allRepairs
+          .filter(r => r.vehicleId === v.id && r.date >= mileageInfo.trackingStartAt)
+          .reduce((sum, r) => sum + parseFloat(r.totalCost || "0"), 0);
+        const tollCost = allTolls
+          .filter(t => t.vanNumber === v.vanNumber && new Date(t.transactionAt).getTime() >= mileageInfo.trackingStartAt)
+          .reduce((sum, t) => sum + t.amount, 0);
+        const totalCost = repairCost + tollCost;
+
+        results.push({
+          vehicleId: v.id,
+          vanNumber: v.vanNumber,
+          totalCost: Math.round(totalCost * 100) / 100,
+          mileage: mileageInfo.totalMiles,
+          costPerMile: Math.round((totalCost / mileageInfo.totalMiles) * 10000) / 10000,
+          trackingStartAt: mileageInfo.trackingStartAt,
+        });
+      }
+
+      return results.sort((a, b) => (b.costPerMile ?? 0) - (a.costPerMile ?? 0));
     }),
     shopComparison: orgProcedure.query(async ({ ctx }) => {
       const orgId = ctx.organizationId;
@@ -1515,7 +1524,7 @@ export const appRouter = router({
 
   // ============ ALERTS GENERATION ============
   alertGeneration: router({
-    run: orgProcedure.mutation(async ({ ctx }) => {
+    run: adminProcedure.mutation(async ({ ctx }) => {
       return db.generateAlerts(ctx.organizationId);
     }),
   }),
@@ -1531,7 +1540,7 @@ export const appRouter = router({
 
   // ============ AI FLEET ADVISOR ============
   advisor: router({
-    chat: orgProcedure
+    chat: adminProcedure
       .input(z.object({
         messages: z.array(z.object({
           role: z.enum(["user", "assistant", "system"]),

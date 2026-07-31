@@ -22,6 +22,7 @@ import { Plus, Search, Wrench, Upload, FileText, AlertCircle, Trash2, Pencil, Do
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 
 const categories = [
@@ -128,6 +129,7 @@ function RepairInvoices({ repairId }: { repairId: number }) {
 }
 
 export default function Repairs() {
+  const { isAdmin } = useIsAdmin();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -366,6 +368,7 @@ export default function Repairs() {
           <h1 className="text-2xl font-bold tracking-tight">Repairs</h1>
           <p className="text-muted-foreground text-sm mt-1">{repairs?.length ?? 0} total repairs logged</p>
         </div>
+        {isAdmin && (
         <Dialog
           open={dialogOpen}
           onOpenChange={(open) => {
@@ -515,6 +518,7 @@ export default function Repairs() {
             </div>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="flex items-end gap-3 flex-wrap">
@@ -583,6 +587,8 @@ export default function Repairs() {
                     </div>
                     <div className="text-right flex items-start gap-1">
                       <RepairInvoices repairId={r.id} />
+                      {isAdmin && (
+                      <>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -600,6 +606,8 @@ export default function Repairs() {
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
+                      </>
+                      )}
                       <div>
                         <Badge variant="secondary" className="font-mono">${r.totalCost}</Badge>
                         {r.repairSuccessful === "yes" ? (

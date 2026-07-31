@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +52,7 @@ function statusFor(expiryMs: number | null | undefined, now: number): { status: 
 }
 
 export default function DriverAbstracts() {
+  const { isAdmin } = useIsAdmin();
   const { data: drivers, isLoading: loadingDrivers } = trpc.drivers.list.useQuery();
   const { data: latestMedical, isLoading: loadingMedical } = trpc.driverMedicalCerts.latestByDriver.useQuery();
   const { data: latestAbstract, isLoading: loadingAbstract } = trpc.driverAbstracts.latestByDriver.useQuery();
@@ -460,9 +462,11 @@ export default function DriverAbstracts() {
           <Button size="sm" variant="outline" onClick={generateReport}>
             <Download className="h-4 w-4 mr-1" /> Generate Report
           </Button>
+          {isAdmin && (
           <Button size="sm" onClick={openAddDriver}>
             <Plus className="h-4 w-4 mr-1" /> Add Driver
           </Button>
+          )}
         </div>
       </div>
 
@@ -503,6 +507,8 @@ export default function DriverAbstracts() {
                     >
                       <FolderOpen className="h-3.5 w-3.5 mr-1" /> Documents
                     </Button>
+                    {isAdmin && (
+                    <>
                     <Button
                       variant="ghost" size="sm" className="h-8 px-2 text-xs"
                       onClick={() => openMobileAccess(driver.id, driver.name)}
@@ -518,6 +524,8 @@ export default function DriverAbstracts() {
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
+                    </>
+                    )}
                   </div>
                 </div>
 
@@ -544,7 +552,7 @@ export default function DriverAbstracts() {
                         <Badge variant="outline" className={`text-xs ${STATUS_STYLES[medicalStatus.status].className}`}>
                           {medical ? new Date(medical.expiryDate).toLocaleDateString() : STATUS_STYLES[medicalStatus.status].label}
                         </Badge>
-                        {medical ? (
+                        {isAdmin && (medical ? (
                           <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEditMedical(driver.id, driver.name, medical)}>
                             Edit
                           </Button>
@@ -552,7 +560,7 @@ export default function DriverAbstracts() {
                           <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => openLogMedical(driver.id, driver.name)}>
                             Log
                           </Button>
-                        )}
+                        ))}
                       </div>
                     </div>
                   )}
@@ -566,7 +574,7 @@ export default function DriverAbstracts() {
                       <Badge variant="outline" className={`text-xs ${STATUS_STYLES[abstractStatus.status].className}`}>
                         {abstract ? new Date(abstract.nextDueDate).toLocaleDateString() : STATUS_STYLES[abstractStatus.status].label}
                       </Badge>
-                      {abstract ? (
+                      {isAdmin && (abstract ? (
                         <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEditAbstract(driver.id, driver.name, abstract)}>
                           Edit
                         </Button>
@@ -574,7 +582,7 @@ export default function DriverAbstracts() {
                         <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => openLogAbstract(driver.id, driver.name)}>
                           Log
                         </Button>
-                      )}
+                      ))}
                     </div>
                   </div>
                 </div>

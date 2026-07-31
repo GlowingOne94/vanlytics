@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ const healthColors: Record<string, string> = {
 };
 
 export default function Vehicles() {
+  const { isAdmin } = useIsAdmin();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -167,6 +169,7 @@ export default function Vehicles() {
           <Button size="sm" variant="outline" onClick={printTagList}>
             <Printer className="h-4 w-4 mr-1" /> Print Tag List
           </Button>
+          {isAdmin && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm">
@@ -288,6 +291,7 @@ export default function Vehicles() {
             </div>
           </DialogContent>
         </Dialog>
+          )}
         </div>
       </div>
 
