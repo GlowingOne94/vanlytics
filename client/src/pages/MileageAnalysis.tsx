@@ -155,6 +155,10 @@ export default function MileageAnalysis() {
                           {new Date(s.clockInAt).toLocaleTimeString()}
                           {s.clockOutAt ? ` → ${new Date(s.clockOutAt).toLocaleTimeString()}` : " (still clocked in)"}
                         </p>
+                        <p className="text-xs text-muted-foreground">
+                          {s.clockInMileage.toLocaleString()} mi
+                          {s.clockOutMileage != null ? ` → ${s.clockOutMileage.toLocaleString()} mi` : " (odometer not yet logged)"}
+                        </p>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right text-xs text-muted-foreground">

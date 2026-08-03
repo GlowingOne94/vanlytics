@@ -294,7 +294,9 @@ export default function Team() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="user">Member</SelectItem>
+                <SelectItem value="user">
+                  Member {!(billingStatus?.isGrandfathered || billingStatus?.planTier === "fleet_pro" || billingStatus?.planTier === "enterprise") && "(Fleet Pro)"}
+                </SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>

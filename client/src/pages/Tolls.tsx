@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Receipt, Upload, AlertTriangle, Trash2, Download } from "lucide-react";
+import { Receipt, Upload, AlertTriangle, Trash2, Download, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 function startOfDay(ms: number) {
@@ -107,6 +107,8 @@ function parseAmount(raw: unknown): number {
 
 export default function Tolls() {
   const { isAdmin } = useIsAdmin();
+  const { data: billingStatus } = trpc.billing.getStatus.useQuery();
+  const canBulkImport = Boolean(billingStatus?.isGrandfathered || billingStatus?.planTier === "fleet_pro" || billingStatus?.planTier === "enterprise");
   const today = startOfDay(Date.now());
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(endOfDay(today));
@@ -260,8 +262,8 @@ export default function Tolls() {
           <Button size="sm" variant="outline" onClick={() => rematchMutation.mutate()} disabled={rematchMutation.isPending}>
             {rematchMutation.isPending ? "Re-matching..." : "Re-match Unmatched"}
           </Button>
-          <Button size="sm" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4 mr-1" /> Import Statement
+          <Button size="sm" onClick={() => canBulkImport ? setImportOpen(true) : toast.error("Bulk statement imports require the Fleet Pro plan.")}>
+            {canBulkImport ? <Upload className="h-4 w-4 mr-1" /> : <Lock className="h-4 w-4 mr-1" />} Import Statement
           </Button>
           </>
           )}

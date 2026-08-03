@@ -1894,3 +1894,55 @@ export async function deleteTollTransactionsInRange(organizationId: number, opts
   if (opts?.endDate) conditions.push(lte(tollTransactions.transactionAt, new Date(opts.endDate)));
   await db.delete(tollTransactions).where(and(...conditions));
 }
+
+// ============ EXPIRATION DASHBOARD ============
+// A focused, always-live view of everything expiring within the next 2
+// weeks — vehicle registration, DOT inspections, and driver CDL/medical/
+// abstract — computed directly rather than depending on the alert-generation
+// job, so it's never stale.
+const EXPIRATION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+export async function getExpirationDashboard(organizationId: number) {
+  const now = Date.now();
+  const windowEnd = now + EXPIRATION_WINDOW_MS;
+  const withinWindow = (expiry: number | null | undefined) => expiry != null && expiry <= windowEnd;
+  const daysLeft = (expiry: number) => Math.ceil((expiry - now) / (24 * 60 * 60 * 1000));
+
+  const [vehicles, latestDot, drivers, latestMedical, latestAbstract] = await Promise.all([
+    getVehicles(organizationId),
+    getLatestDotInspectionByVehicle(organizationId),
+    getDrivers(organizationId),
+    getLatestMedicalCertByDriver(organizationId),
+    getLatestAbstractByDriver(organizationId),
+  ]);
+
+  const vehicleRegistrations = vehicles
+    .filter(v => withinWindow(v.registrationExpiry))
+    .map(v => ({ vehicleId: v.id, vanNumber: v.vanNumber, expiryDate: v.registrationExpiry!, daysLeft: daysLeft(v.registrationExpiry!) }));
+
+  const dotInspections = vehicles
+    .filter(v => withinWindow(latestDot[v.id]?.expiryDate))
+    .map(v => ({ vehicleId: v.id, vanNumber: v.vanNumber, expiryDate: latestDot[v.id].expiryDate, daysLeft: daysLeft(latestDot[v.id].expiryDate) }));
+
+  const driverCdl = drivers
+    .filter(d => d.status === "active" && withinWindow(d.cdlExpiry))
+    .map(d => ({ driverId: d.id, driverName: d.name, expiryDate: d.cdlExpiry!, daysLeft: daysLeft(d.cdlExpiry!) }));
+
+  const driverMedical = drivers
+    .filter(d => d.status === "active" && withinWindow(latestMedical[d.id]?.expiryDate))
+    .map(d => ({ driverId: d.id, driverName: d.name, expiryDate: latestMedical[d.id].expiryDate, daysLeft: daysLeft(latestMedical[d.id].expiryDate) }));
+
+  const driverAbstracts = drivers
+    .filter(d => d.status === "active" && withinWindow(latestAbstract[d.id]?.nextDueDate))
+    .map(d => ({ driverId: d.id, driverName: d.name, expiryDate: latestAbstract[d.id].nextDueDate, daysLeft: daysLeft(latestAbstract[d.id].nextDueDate) }));
+
+  const sortByDays = <T extends { daysLeft: number }>(list: T[]) => list.sort((a, b) => a.daysLeft - b.daysLeft);
+
+  return {
+    vehicleRegistrations: sortByDays(vehicleRegistrations),
+    dotInspections: sortByDays(dotInspections),
+    driverCdl: sortByDays(driverCdl),
+    driverMedical: sortByDays(driverMedical),
+    driverAbstracts: sortByDays(driverAbstracts),
+  };
+}

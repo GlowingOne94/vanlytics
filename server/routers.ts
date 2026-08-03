@@ -9,7 +9,7 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
 import { sendInviteEmail } from "./_core/email";
-import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, extraVehiclePriceId } from "./_core/stripe";
+import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, planMeetsMinimum, extraVehiclePriceId } from "./_core/stripe";
 import { ENV } from "./_core/env";
 import * as db from "./db";
 
@@ -105,6 +105,30 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const org = await db.getOrganizationById(ctx.organizationId);
+        const isGrandfathered = org?.isGrandfathered === "yes";
+        const planTier = org?.planTier ?? "none";
+
+        if (input.role === "admin" && !isGrandfathered) {
+          const adminLimit = PLAN_ADMIN_LIMITS[planTier] ?? PLAN_ADMIN_LIMITS.none;
+          const members = await db.getOrganizationMembers(ctx.organizationId);
+          const currentAdminCount = members.filter(m => m.role === "admin").length;
+          if (currentAdminCount >= adminLimit) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: `Your plan allows up to ${adminLimit} administrative user${adminLimit === 1 ? "" : "s"}. Upgrade your plan to add more.`,
+            });
+          }
+        }
+
+        // "Advanced Permissions" — restricted Member (read-only) accounts —
+        // is a Fleet Pro feature. Lower tiers can only invite Admins.
+        if (input.role === "user" && !isGrandfathered && !planMeetsMinimum(planTier, "fleet_pro")) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Restricted (read-only) team member accounts require the Fleet Pro plan. Upgrade to invite Members, or invite this person as an Admin instead.",
+          });
+        }
+
         const token = generateToken();
         const tokenHash = hashToken(token);
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
@@ -1239,6 +1263,15 @@ export const appRouter = router({
         })),
       }))
       .mutation(async ({ input, ctx }) => {
+        const org = await db.getOrganizationById(ctx.organizationId);
+        const isGrandfathered = org?.isGrandfathered === "yes";
+        if (!isGrandfathered && !planMeetsMinimum(org?.planTier ?? "none", "fleet_pro")) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Bulk statement imports require the Fleet Pro plan. Upgrade to import toll statements in bulk.",
+          });
+        }
+
         let fileUrl: string | undefined;
         let fileKey: string | undefined;
         if (input.fileBase64 && input.contentType) {
@@ -1311,6 +1344,20 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getAlerts(ctx.organizationId, input);
       }),
+    // Expiration Dashboard — Fleet tier and above only. A focused 2-week
+    // view of vehicle registration/DOT and driver CDL/medical/abstract
+    // expirations, separate from the general alerts feed.
+    expirationDashboard: orgProcedure.query(async ({ ctx }) => {
+      const org = await db.getOrganizationById(ctx.organizationId);
+      const isGrandfathered = org?.isGrandfathered === "yes";
+      if (!isGrandfathered && !planMeetsMinimum(org?.planTier ?? "none", "fleet")) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "The Expiration Dashboard requires the Fleet plan or higher. Upgrade to unlock it.",
+        });
+      }
+      return db.getExpirationDashboard(ctx.organizationId);
+    }),
     markRead: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {

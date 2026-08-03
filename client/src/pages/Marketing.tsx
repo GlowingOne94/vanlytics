@@ -23,6 +23,7 @@ type Plan = {
   blurb: string;
   features: string[];
   highlight?: boolean;
+  comingSoon?: boolean;
 };
 
 const PLANS: Plan[] = [
@@ -73,10 +74,8 @@ const PLANS: Plan[] = [
     features: [
       "Everything in Fleet, plus:",
       "Multiple companies/entities",
-      "Custom maintenance schedules",
       "Advanced permissions",
-      "Custom reports",
-      "Bulk data imports",
+      "Bulk data imports (tolls; gas bills coming soon)",
       "Unlimited administrative users",
       "Faster support",
     ],
@@ -84,17 +83,11 @@ const PLANS: Plan[] = [
   {
     key: "enterprise",
     name: "Enterprise",
-    price: "Custom",
+    price: "Coming Soon",
     period: "",
     blurb: "For fleets over 40 vehicles",
-    features: [
-      "Dedicated onboarding",
-      "Multi-location management",
-      "Custom fields & integrations",
-      "API access",
-      "Service-level agreement",
-      "Dedicated account support",
-    ],
+    features: [],
+    comingSoon: true,
   },
 ];
 
@@ -154,7 +147,7 @@ export default function Marketing() {
         <p className="text-center text-muted-foreground mb-10">No per-driver fees. Cancel anytime.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {PLANS.map(plan => (
-            <Card key={plan.key} className={plan.highlight ? "border-primary shadow-lg relative" : ""}>
+            <Card key={plan.key} className={plan.highlight ? "border-primary shadow-lg relative" : plan.comingSoon ? "opacity-80" : ""}>
               {plan.highlight && (
                 <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">Most Popular</Badge>
               )}
@@ -165,25 +158,38 @@ export default function Marketing() {
                   <span className="text-3xl font-bold">{plan.price}</span>
                   <span className="text-sm text-muted-foreground">{plan.period}</span>
                 </div>
-                <ul className="space-y-2 text-sm mb-6 flex-1">
-                  {plan.features.map(f => (
-                    <li key={f} className="flex items-start gap-2">
-                      {f.startsWith("Everything") ? (
-                        <span className="text-muted-foreground italic">{f}</span>
-                      ) : (
-                        <>
-                          <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                          <span>{f}</span>
-                        </>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/login">
-                  <Button className="w-full" variant={plan.highlight ? "default" : "outline"}>
-                    {plan.key === "enterprise" ? "Contact Us" : "Get Started"}
+                {plan.comingSoon ? (
+                  <p className="text-sm text-muted-foreground mb-6 flex-1">
+                    Enterprise-scale fleet management is on the way — built for operations running more than 40 vehicles.
+                    Reach out to be the first to know when it's available.
+                  </p>
+                ) : (
+                  <ul className="space-y-2 text-sm mb-6 flex-1">
+                    {plan.features.map(f => (
+                      <li key={f} className="flex items-start gap-2">
+                        {f.startsWith("Everything") ? (
+                          <span className="text-muted-foreground italic">{f}</span>
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                            <span>{f}</span>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {plan.comingSoon ? (
+                  <Button className="w-full" variant="outline" disabled>
+                    Coming Soon
                   </Button>
-                </Link>
+                ) : (
+                  <Link href="/login">
+                    <Button className="w-full" variant={plan.highlight ? "default" : "outline"}>
+                      Get Started
+                    </Button>
+                  </Link>
+                )}
               </CardContent>
             </Card>
           ))}

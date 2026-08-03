@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Check, X, AlertTriangle, Info, AlertCircle, RefreshCw } from "lucide-react";
+import { Bell, Check, X, AlertTriangle, Info, AlertCircle, RefreshCw, Lock, Calendar, Truck, ClipboardCheck, IdCard, HeartPulse, FileSearch } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +33,10 @@ type AlertItem = {
 export default function Alerts() {
   const { isAdmin } = useIsAdmin();
   const { data: alerts, isLoading } = trpc.alerts.list.useQuery();
+  const { data: billingStatus } = trpc.billing.getStatus.useQuery();
+  const canSeeExpirationDashboard = Boolean(
+    billingStatus?.isGrandfathered || (billingStatus && ["fleet", "fleet_pro", "enterprise"].includes(billingStatus.planTier))
+  );
   const utils = trpc.useUtils();
   const hasAutoChecked = useRef(false);
 
@@ -135,6 +139,9 @@ export default function Alerts() {
             <TabsTrigger value="repairs">
               Repairs {repairAlerts.length > 0 && <Badge variant="secondary" className="ml-1.5">{unreadCount(repairAlerts)}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="expiration">
+              Expiration Dashboard {!canSeeExpirationDashboard && <Lock className="h-3 w-3 ml-1.5" />}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="vehicles" className="mt-4">
@@ -163,6 +170,9 @@ export default function Alerts() {
               onMarkRead={(id) => markReadMutation.mutate({ id })}
               onDismiss={(id) => dismissMutation.mutate({ id })}
             />
+          </TabsContent>
+          <TabsContent value="expiration" className="mt-4">
+            <ExpirationDashboard canAccess={canSeeExpirationDashboard} />
           </TabsContent>
         </Tabs>
       )}
@@ -229,6 +239,76 @@ function AlertList({
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+function ExpirationDashboard({ canAccess }: { canAccess: boolean }) {
+  const { data, isLoading } = trpc.alerts.expirationDashboard.useQuery(undefined, { enabled: canAccess });
+
+  if (!canAccess) {
+    return (
+      <Card>
+        <CardContent className="p-10 text-center">
+          <Lock className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
+          <h3 className="font-semibold mb-1">Expiration Dashboard requires Fleet or higher</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            See every vehicle registration, DOT inspection, and driver CDL/medical/abstract expiring within the
+            next 2 weeks, all in one focused view. Upgrade your plan from the Team page to unlock it.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading || !data) {
+    return <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}</div>;
+  }
+
+  const sections = [
+    { key: "vehicleRegistrations", title: "Vehicle Registration", icon: Truck, items: data.vehicleRegistrations, label: (i: any) => `Van ${i.vanNumber}` },
+    { key: "dotInspections", title: "DOT Inspections", icon: ClipboardCheck, items: data.dotInspections, label: (i: any) => `Van ${i.vanNumber}` },
+    { key: "driverCdl", title: "Driver CDL", icon: IdCard, items: data.driverCdl, label: (i: any) => i.driverName },
+    { key: "driverMedical", title: "Driver Medical Certs", icon: HeartPulse, items: data.driverMedical, label: (i: any) => i.driverName },
+    { key: "driverAbstracts", title: "Driver Abstracts", icon: FileSearch, items: data.driverAbstracts, label: (i: any) => i.driverName },
+  ];
+
+  const totalCount = sections.reduce((sum, s) => sum + s.items.length, 0);
+
+  if (totalCount === 0) {
+    return (
+      <div className="text-center py-12">
+        <Calendar className="h-10 w-10 mx-auto text-muted-foreground/50" />
+        <p className="text-sm text-muted-foreground mt-3">Nothing expiring in the next 2 weeks. You're all caught up.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {sections.filter(s => s.items.length > 0).map(section => (
+        <div key={section.key}>
+          <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+            <section.icon className="h-4 w-4 text-primary" /> {section.title}
+            <span className="text-xs font-normal text-muted-foreground">({section.items.length})</span>
+          </h3>
+          <div className="space-y-1.5">
+            {section.items.map((item: any, i: number) => (
+              <Card key={i}>
+                <CardContent className="p-3 flex items-center justify-between">
+                  <p className="text-sm font-medium">{section.label(item)}</p>
+                  <Badge
+                    variant="outline"
+                    className={item.daysLeft <= 0 ? "bg-red-500/15 text-red-500 border-red-500/30" : "bg-yellow-500/15 text-yellow-500 border-yellow-500/30"}
+                  >
+                    {item.daysLeft <= 0 ? "Expired" : `${item.daysLeft}d left`} · {new Date(item.expiryDate).toLocaleDateString()}
+                  </Badge>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
