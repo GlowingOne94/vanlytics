@@ -262,10 +262,12 @@ export default function Repairs() {
   };
 
   const [vehicleFilter, setVehicleFilter] = useState("all");
+  const [shopFilter, setShopFilter] = useState("all");
 
   const filtered = repairs?.filter(
     (r) =>
       (vehicleFilter === "all" || String(r.vehicleId) === vehicleFilter) &&
+      (shopFilter === "all" || String(r.shopId) === shopFilter) &&
       ((r.complaint || "").toLowerCase().includes(search.toLowerCase()) ||
       (r.diagnosis || "").toLowerCase().includes(search.toLowerCase()) ||
       (r.mechanic || "").toLowerCase().includes(search.toLowerCase()) ||
@@ -302,7 +304,8 @@ export default function Repairs() {
     const a = document.createElement("a");
     a.href = url;
     const vanLabel = vehicleFilter === "all" ? "all-vans" : `van-${vehicles?.find(v => String(v.id) === vehicleFilter)?.vanNumber || vehicleFilter}`;
-    a.download = `repairs-${vanLabel}-${new Date().toISOString().split("T")[0]}.csv`;
+    const shopLabel = shopFilter === "all" ? "" : `-${(shops?.find(s => String(s.id) === shopFilter)?.name || "shop").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    a.download = `repairs-${vanLabel}${shopLabel}-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -327,6 +330,7 @@ export default function Repairs() {
       `;
     }).join("");
     const vanLabel = vehicleFilter === "all" ? "All Vans" : `Van ${vehicles?.find(v => String(v.id) === vehicleFilter)?.vanNumber || vehicleFilter}`;
+    const shopLabel = shopFilter === "all" ? "" : ` · ${shops?.find(s => String(s.id) === shopFilter)?.name || "Shop"}`;
 
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -347,7 +351,7 @@ export default function Repairs() {
           </style>
         </head>
         <body>
-          <h1>Vanlytics — Repair History (${vanLabel})</h1>
+          <h1>Vanlytics — Repair History (${vanLabel}${shopLabel})</h1>
           <p class="meta">Printed: ${new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · ${filtered.length} repair${filtered.length === 1 ? "" : "s"}</p>
           <table>
             <thead>
@@ -545,6 +549,16 @@ export default function Repairs() {
             <SelectContent>
               <SelectItem value="all">All Vans</SelectItem>
               {vehicles?.map(v => <SelectItem key={v.id} value={String(v.id)}>Van {v.vanNumber}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Shop</Label>
+          <Select value={shopFilter} onValueChange={setShopFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Shops</SelectItem>
+              {shops?.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

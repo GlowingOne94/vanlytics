@@ -65,6 +65,20 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({ name: z.string().min(1).max(200) }))
       .mutation(async ({ input, ctx }) => {
+        const adminOrgs = await db.getUserAdminOrgTiers(ctx.user.id);
+        const isGrandfathered = adminOrgs.some(o => o.isGrandfathered === "yes");
+        const eligibleForTwo = adminOrgs.some(o => planMeetsMinimum(o.planTier ?? "none", "fleet"));
+        const maxCompanies = isGrandfathered ? Infinity : eligibleForTwo ? 2 : 1;
+
+        if (adminOrgs.length >= maxCompanies) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: eligibleForTwo
+              ? "Your plan allows up to 2 companies. This account already administers that many."
+              : "The Starter plan allows 1 company. Upgrade an existing company to Fleet or higher to create a second one.",
+          });
+        }
+
         const slugify = (name: string) =>
           name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "org";
 

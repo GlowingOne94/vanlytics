@@ -178,6 +178,25 @@ export async function getUserMemberships(userId: number) {
     .orderBy(organizationMembers.id);
 }
 
+// How many companies this user already administers, and their plan tiers —
+// used to decide whether they're allowed to create another one. Only
+// counts companies where they're an admin (not a read-only Member of
+// someone else's company), since that's what "owning" a company means here.
+export async function getUserAdminOrgTiers(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      organizationId: organizationMembers.organizationId,
+      planTier: organizations.planTier,
+      isGrandfathered: organizations.isGrandfathered,
+    })
+    .from(organizationMembers)
+    .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+    .where(and(eq(organizationMembers.userId, userId), eq(organizationMembers.role, "admin")));
+  return rows;
+}
+
 // A user's role within one specific organization, or undefined if they
 // aren't a member — the core check behind every organization-scoped request.
 export async function getMembership(userId: number, organizationId: number) {
