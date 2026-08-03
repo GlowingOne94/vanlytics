@@ -1,4 +1,4 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, isCountableToll } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, orgProcedure, adminProcedure, router } from "./_core/trpc";
@@ -1425,7 +1425,7 @@ export const appRouter = router({
 
       const tollMap = new Map<string, { total: number; count: number }>();
       for (const t of allTolls) {
-        if (!t.vanNumber) continue;
+        if (!t.vanNumber || !isCountableToll(t.exitPlaza)) continue;
         const entry = tollMap.get(t.vanNumber) ?? { total: 0, count: 0 };
         entry.total += t.amount;
         entry.count++;
@@ -1458,10 +1458,11 @@ export const appRouter = router({
         categoryMap[cat].total += parseFloat(r.totalCost || "0");
         categoryMap[cat].count++;
       }
-      if (allTolls.length > 0) {
+      const countableTolls = allTolls.filter(t => isCountableToll(t.exitPlaza));
+      if (countableTolls.length > 0) {
         categoryMap["Tolls"] = {
-          total: allTolls.reduce((sum, t) => sum + t.amount, 0),
-          count: allTolls.length,
+          total: countableTolls.reduce((sum, t) => sum + t.amount, 0),
+          count: countableTolls.length,
         };
       }
       return Object.entries(categoryMap).map(([category, data]) => ({
@@ -1486,6 +1487,7 @@ export const appRouter = router({
           monthlyMap[key] = (monthlyMap[key] || 0) + parseFloat(r.totalCost || "0");
         }
         for (const t of allTolls) {
+          if (!isCountableToll(t.exitPlaza)) continue;
           const date = new Date(t.transactionAt);
           const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
           monthlyMap[key] = (monthlyMap[key] || 0) + t.amount;
@@ -1528,7 +1530,7 @@ export const appRouter = router({
           .filter(r => r.vehicleId === v.id && r.date >= mileageInfo.trackingStartAt)
           .reduce((sum, r) => sum + parseFloat(r.totalCost || "0"), 0);
         const tollCost = allTolls
-          .filter(t => t.vanNumber === v.vanNumber && new Date(t.transactionAt).getTime() >= mileageInfo.trackingStartAt)
+          .filter(t => t.vanNumber === v.vanNumber && isCountableToll(t.exitPlaza) && new Date(t.transactionAt).getTime() >= mileageInfo.trackingStartAt)
           .reduce((sum, t) => sum + t.amount, 0);
         const totalCost = repairCost + tollCost;
 

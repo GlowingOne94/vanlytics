@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { trpc } from "@/lib/trpc";
+import { isCountableToll } from "@shared/const";
 import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { fileToBase64 } from "@/components/DocumentField";
@@ -194,7 +195,7 @@ export default function Tolls() {
 
   const summary = useMemo(() => {
     const rows = transactions ?? [];
-    const total = rows.reduce((sum, t) => sum + t.amount, 0);
+    const total = rows.filter(t => isCountableToll(t.exitPlaza)).reduce((sum, t) => sum + t.amount, 0);
     const unmatched = rows.filter(t => !t.vanNumber).length;
     return { total, count: rows.length, unmatched };
   }, [transactions]);
@@ -392,6 +393,9 @@ export default function Tolls() {
                     <p className="text-sm font-medium">
                       {t.entryPlaza ? `${t.entryPlaza} → ` : ""}{t.exitPlaza || "Unknown plaza"}
                       {t.vehicleClass && <span className="text-muted-foreground font-normal"> · Class {t.vehicleClass}</span>}
+                      {!isCountableToll(t.exitPlaza) && (
+                        <span className="text-muted-foreground font-normal text-xs"> (not counted in total)</span>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(t.transactionAt).toLocaleString()}
