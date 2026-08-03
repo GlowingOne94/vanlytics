@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Search, Wrench, Upload, FileText, AlertCircle, Trash2, Pencil, Download, Printer } from "lucide-react";
+import * as XLSX from "xlsx";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -132,6 +133,7 @@ export default function Repairs() {
   const { isAdmin } = useIsAdmin();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { data: repairs, isLoading } = trpc.repairs.list.useQuery();
   const { data: vehicles } = trpc.vehicles.list.useQuery();
@@ -369,6 +371,10 @@ export default function Repairs() {
           <p className="text-muted-foreground text-sm mt-1">{repairs?.length ?? 0} total repairs logged</p>
         </div>
         {isAdmin && (
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4 mr-1" /> Import History
+          </Button>
         <Dialog
           open={dialogOpen}
           onOpenChange={(open) => {
@@ -518,8 +524,11 @@ export default function Repairs() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
         )}
       </div>
+
+      <ImportHistoryDialog open={importOpen} onOpenChange={setImportOpen} vehicles={vehicles} />
 
       <div className="flex items-end gap-3 flex-wrap">
         <div className="relative max-w-sm flex-1 min-w-[200px]">
@@ -633,5 +642,202 @@ export default function Repairs() {
         </div>
       )}
     </div>
+  );
+}
+
+const REPAIR_IMPORT_FIELDS: { key: string; label: string; required: boolean }[] = [
+  { key: "carNickname", label: "Van / Car Nickname", required: true },
+  { key: "category", label: "Maintenance Type", required: false },
+  { key: "date", label: "Maintenance Date", required: true },
+  { key: "totalCost", label: "Maintenance Cost", required: true },
+  { key: "mileage", label: "Maintenance Mileage", required: false },
+  { key: "complaint", label: "Maintenance Notes", required: false },
+];
+
+function guessRepairImportColumn(headers: string[], key: string): string | null {
+  const patterns: Record<string, RegExp> = {
+    carNickname: /car.?nickname|van|vehicle/i,
+    category: /maintenance.?type|type|category/i,
+    date: /date/i,
+    totalCost: /cost/i,
+    mileage: /mileage/i,
+    complaint: /notes?/i,
+  };
+  const pattern = patterns[key];
+  return headers.find(h => pattern.test(h)) ?? null;
+}
+
+// Parses M/D/YYYY (and similar) using local date components — never routes
+// through a raw `new Date(string)` call, which is what caused the
+// off-by-one-day timezone bug we fixed elsewhere in the app.
+function parseImportDate(raw: unknown): number {
+  if (raw instanceof Date) {
+    return new Date(raw.getFullYear(), raw.getMonth(), raw.getDate()).getTime();
+  }
+  const str = String(raw ?? "").trim();
+  const match = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (match) {
+    const month = parseInt(match[1], 10);
+    const day = parseInt(match[2], 10);
+    let year = parseInt(match[3], 10);
+    if (year < 100) year += 2000;
+    return new Date(year, month - 1, day).getTime();
+  }
+  const fallback = new Date(str);
+  if (!isNaN(fallback.getTime())) {
+    return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate()).getTime();
+  }
+  return Date.now();
+}
+
+function parseImportNumber(raw: unknown): number {
+  if (typeof raw === "number") return raw;
+  const cleaned = String(raw ?? "").replace(/[^0-9.-]/g, "");
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+function ImportHistoryDialog({
+  open, onOpenChange, vehicles,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  vehicles: { vanNumber: string }[] | undefined;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+
+  const importMutation = trpc.repairs.createImport.useMutation({
+    onSuccess: (result) => {
+      utils.repairs.list.invalidate();
+      if (result.skipped > 0) {
+        toast.error(
+          `Imported ${result.imported}, skipped ${result.skipped} (no matching van): ${result.unmatchedNicknames.join(", ")}`,
+          { duration: 10000 }
+        );
+      } else {
+        toast.success(`Imported ${result.imported} repair records`);
+      }
+      setFile(null);
+      setHeaders([]);
+      setRows([]);
+      setMapping({});
+      setSubmitting(false);
+      onOpenChange(false);
+    },
+    onError: (err) => { toast.error(err.message); setSubmitting(false); },
+  });
+
+  const handleFile = async (f: File) => {
+    setFile(f);
+    const buffer = await f.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    const withData = json.filter(row => Object.values(row).some(v => String(v).trim() !== ""));
+    if (withData.length === 0) {
+      toast.error("No rows with data found in that file");
+      return;
+    }
+    const detectedHeaders = Object.keys(withData[0]);
+    setHeaders(detectedHeaders);
+    setRows(withData);
+
+    const guessed: Record<string, string> = {};
+    for (const field of REPAIR_IMPORT_FIELDS) {
+      const guess = guessRepairImportColumn(detectedHeaders, field.key);
+      if (guess) guessed[field.key] = guess;
+    }
+    setMapping(guessed);
+  };
+
+  const missingRequired = REPAIR_IMPORT_FIELDS.filter(f => f.required && !mapping[f.key]);
+
+  const handleConfirmImport = () => {
+    if (missingRequired.length > 0) {
+      toast.error(`Map required fields first: ${missingRequired.map(f => f.label).join(", ")}`);
+      return;
+    }
+    setSubmitting(true);
+    const get = (row: Record<string, unknown>, key: string) => (mapping[key] ? row[mapping[key]] : undefined);
+    const mappedRows = rows.map(row => ({
+      carNickname: String(get(row, "carNickname") ?? "").trim(),
+      category: get(row, "category") ? String(get(row, "category")).trim() : undefined,
+      date: parseImportDate(get(row, "date")),
+      totalCost: parseImportNumber(get(row, "totalCost")),
+      mileage: get(row, "mileage") ? parseImportNumber(get(row, "mileage")) : undefined,
+      complaint: get(row, "complaint") ? String(get(row, "complaint")).trim() : undefined,
+    })).filter(r => r.carNickname);
+
+    importMutation.mutate({ rows: mappedRows });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Import Repair History</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+            />
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="h-4 w-4 mr-2" /> Choose File
+            </Button>
+            {file && <span className="text-sm text-muted-foreground">{file.name} ({rows.length} rows)</span>}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Each row must reference a van already in Fleet — "Van 68" and "68" both match a van whose
+            number on file is <span className="font-mono">68</span>. Vans currently on file:{" "}
+            {vehicles?.map(v => v.vanNumber).join(", ") || "none yet"}.
+          </p>
+
+          {headers.length > 0 && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t">
+                {REPAIR_IMPORT_FIELDS.map(field => (
+                  <div key={field.key}>
+                    <Label className="text-xs">
+                      {field.label}{field.required && <span className="text-destructive"> *</span>}
+                    </Label>
+                    <Select
+                      value={mapping[field.key] || "__none__"}
+                      onValueChange={(v) => setMapping({ ...mapping, [field.key]: v === "__none__" ? "" : v })}
+                    >
+                      <SelectTrigger className="h-8"><SelectValue placeholder="— not mapped —" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— not mapped —</SelectItem>
+                        {headers.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+
+              {missingRequired.length > 0 && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <AlertCircle className="h-3.5 w-3.5" /> Map required fields: {missingRequired.map(f => f.label).join(", ")}
+                </p>
+              )}
+
+              <Button onClick={handleConfirmImport} disabled={submitting || missingRequired.length > 0} className="w-full">
+                {submitting ? "Importing..." : `Confirm Import (${rows.length} rows)`}
+              </Button>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

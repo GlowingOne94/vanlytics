@@ -333,6 +333,20 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return db.getRepairs(ctx.organizationId, input?.vehicleId);
       }),
+    createImport: adminProcedure
+      .input(z.object({
+        rows: z.array(z.object({
+          carNickname: z.string(),
+          category: z.string().optional(),
+          date: z.number(),
+          totalCost: z.number(),
+          mileage: z.number().optional(),
+          complaint: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createRepairsBulk(ctx.organizationId, input.rows);
+      }),
     getById: orgProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input, ctx }) => {

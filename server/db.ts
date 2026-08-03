@@ -336,6 +336,46 @@ export async function createRepair(organizationId: number, data: Omit<InsertRepa
   return { id: result[0].insertId };
 }
 
+// Strips an optional leading "van" word (any case/spacing) so "Van 68" and
+// "68" both normalize to the same thing for matching against vanNumber.
+const normalizeVanNickname = (s: string) => s.trim().replace(/^van\s*/i, "").toUpperCase();
+
+export async function createRepairsBulk(
+  organizationId: number,
+  rows: { carNickname: string; category?: string; date: number; totalCost: number; mileage?: number; complaint?: string }[],
+) {
+  const vehicles = await getVehicles(organizationId);
+  const byVanNumber = new Map(vehicles.map(v => [normalizeVanNickname(v.vanNumber), v]));
+
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const toInsert: (Omit<InsertRepair, "organizationId">)[] = [];
+  const unmatchedNicknames: string[] = [];
+
+  for (const row of rows) {
+    const vehicle = byVanNumber.get(normalizeVanNickname(row.carNickname));
+    if (!vehicle) {
+      unmatchedNicknames.push(row.carNickname);
+      continue;
+    }
+    toInsert.push({
+      vehicleId: vehicle.id,
+      date: row.date,
+      mileage: row.mileage && row.mileage > 0 ? row.mileage : null,
+      complaint: row.complaint || undefined,
+      category: row.category || undefined,
+      totalCost: String(row.totalCost),
+    });
+  }
+
+  if (toInsert.length > 0) {
+    await db.insert(repairs).values(toInsert.map(r => ({ ...r, organizationId })));
+  }
+
+  return { imported: toInsert.length, skipped: unmatchedNicknames.length, unmatchedNicknames: Array.from(new Set(unmatchedNicknames)) };
+}
+
 export async function updateRepair(organizationId: number, id: number, data: Partial<InsertRepair>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
