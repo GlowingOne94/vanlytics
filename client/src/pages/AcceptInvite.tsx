@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,14 @@ export default function AcceptInvite() {
 
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [creatingAccount, setCreatingAccount] = useState(false);
+  // Default to "create account" — most invites go to people who've never
+  // used Vanlytics before. Flip to login mode once we know for sure the
+  // invited email already has an account, rather than making everyone
+  // notice and click a toggle link to get to the form they actually need.
+  const [creatingAccount, setCreatingAccount] = useState(true);
+  useEffect(() => {
+    if (invite) setCreatingAccount(!invite.hasExistingAccount);
+  }, [invite?.hasExistingAccount]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

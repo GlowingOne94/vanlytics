@@ -198,12 +198,16 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const invite = await db.getInviteByTokenHash(hashToken(input.token));
         if (!invite) return null;
-        const org = await db.getOrganizationById(invite.organizationId);
+        const [org, existingUser] = await Promise.all([
+          db.getOrganizationById(invite.organizationId),
+          db.getUserByEmail(invite.email),
+        ]);
         return {
           email: invite.email,
           organizationName: org?.name ?? "Unknown",
           expired: invite.expiresAt.getTime() < Date.now(),
           accepted: Boolean(invite.acceptedAt),
+          hasExistingAccount: Boolean(existingUser),
         };
       }),
   }),
