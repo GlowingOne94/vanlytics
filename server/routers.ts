@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
-import { sendInviteEmail } from "./_core/email";
+import { sendInviteEmail, sendServiceInquiryEmail } from "./_core/email";
 import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, planMeetsMinimum, extraVehiclePriceId, intervalAvailableForTier } from "./_core/stripe";
 import { ENV } from "./_core/env";
 import * as db from "./db";
@@ -1692,6 +1692,34 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
           content = rawContent.filter(c => c.type === "text").map(c => (c as any).text).join("");
         }
         return { content };
+      }),
+  }),
+
+  // ============ SERVICE INQUIRIES (onboarding/setup, landing page) ============
+  // Public on purpose — this is a lead-capture form for prospective and
+  // existing customers, not something requiring an account. It only ever
+  // sends a notification email; no payment or account changes happen here.
+  serviceInquiries: router({
+    submit: publicProcedure
+      .input(z.object({
+        service: z.enum(["demo", "migration"]),
+        name: z.string().min(1).max(200),
+        email: z.string().email(),
+        company: z.string().min(1).max(200),
+        phone: z.string().max(50).optional(),
+        message: z.string().max(2000).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const serviceLabel = input.service === "demo" ? "Guided Setup Demo ($50)" : "Full Migration & Setup";
+        await sendServiceInquiryEmail({
+          service: serviceLabel,
+          name: input.name,
+          email: input.email,
+          company: input.company,
+          phone: input.phone,
+          message: input.message,
+        });
+        return { success: true } as const;
       }),
   }),
 });

@@ -3,8 +3,19 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Truck, Wrench, Calendar, ClipboardCheck, UserCircle, DollarSign, Check,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import {
+  Truck, Wrench, Calendar, ClipboardCheck, UserCircle, DollarSign, Check, Sparkles, MessageCircle,
 } from "lucide-react";
 
 const FEATURES = [
@@ -14,6 +25,30 @@ const FEATURES = [
   { icon: ClipboardCheck, title: "DOT Inspections", desc: "Track inspection dates and expirations across your whole fleet, with alerts before anything lapses." },
   { icon: UserCircle, title: "Driver Records", desc: "License, medical certification, and MVR/abstract tracking — configurable to your industry." },
   { icon: DollarSign, title: "Cost Reporting", desc: "See cost per vehicle, cost per mile, and spending trends without digging through spreadsheets." },
+];
+
+const SERVICES = [
+  {
+    key: "self" as const,
+    name: "Self-Setup",
+    price: "Free",
+    desc: "Set everything up yourself, guided by our built-in help and documentation. No cost, no time limit.",
+    cta: null,
+  },
+  {
+    key: "demo" as const,
+    name: "Guided Setup Demo",
+    price: "$50 one-time",
+    desc: "A live walkthrough where we show you exactly how to set up and use every part of the system properly.",
+    cta: "Inquire About This",
+  },
+  {
+    key: "migration" as const,
+    name: "Full Migration & Setup",
+    price: "Contact for pricing",
+    desc: "We do it for you: importing your full fleet, repair history, and driver profiles; setting up preventive maintenance schedules; logging current DOT inspections; and entering all driver license/medical/abstract expirations.",
+    cta: "Inquire About This",
+  },
 ];
 
 type Plan = {
@@ -115,6 +150,7 @@ const PLANS: Plan[] = [
 
 export default function Marketing() {
   const [pricingInterval, setPricingInterval] = useState<"month" | "quarter" | "year">("month");
+  const [inquiryService, setInquiryService] = useState<"demo" | "migration" | null>(null);
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -277,6 +313,37 @@ export default function Marketing() {
         </div>
       </section>
 
+      {/* Onboarding & Setup Services */}
+      <section className="max-w-6xl mx-auto px-6 py-16 border-t">
+        <h2 className="text-2xl font-bold text-center mb-2">Onboarding & Setup Services</h2>
+        <p className="text-center text-muted-foreground mb-10">Set it up yourself for free, or let us help.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          {SERVICES.map(service => (
+            <Card key={service.key}>
+              <CardContent className="p-6 flex flex-col h-full">
+                <h3 className="font-semibold text-lg">{service.name}</h3>
+                <p className="text-2xl font-bold my-2">{service.price}</p>
+                <p className="text-sm text-muted-foreground mb-6 flex-1">{service.desc}</p>
+                {service.cta && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setInquiryService(service.key as "demo" | "migration")}
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2" /> {service.cta}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          These services are by request only — reach out and we'll follow up personally to arrange details and payment.
+        </p>
+      </section>
+
+      <ServiceInquiryDialog service={inquiryService} onOpenChange={(open) => { if (!open) setInquiryService(null); }} />
+
       {/* Footer */}
       <footer className="border-t mt-8">
         <div className="max-w-6xl mx-auto px-6 py-8 flex items-center justify-between text-sm text-muted-foreground">
@@ -287,5 +354,91 @@ export default function Marketing() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function ServiceInquiryDialog({
+  service, onOpenChange,
+}: {
+  service: "demo" | "migration" | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const inquiryMutation = trpc.serviceInquiries.submit.useMutation({
+    onSuccess: () => setSubmitted(true),
+    onError: (err) => toast.error(err.message || "Something went wrong — please try again."),
+  });
+
+  const reset = () => {
+    setName(""); setEmail(""); setCompany(""); setPhone(""); setMessage(""); setSubmitted(false);
+  };
+
+  const serviceLabel = service === "demo" ? "Guided Setup Demo ($50)" : "Full Migration & Setup";
+
+  return (
+    <Dialog open={service !== null} onOpenChange={(open) => { onOpenChange(open); if (!open) reset(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" /> Inquire — {serviceLabel}
+          </DialogTitle>
+        </DialogHeader>
+        {submitted ? (
+          <div className="py-6 text-center space-y-2">
+            <p className="font-medium">Thanks — we've got it.</p>
+            <p className="text-sm text-muted-foreground">We'll reach out at the email you provided to follow up and arrange details.</p>
+          </div>
+        ) : (
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              This is a request only — nothing is charged automatically. We'll follow up personally to arrange details and payment.
+            </p>
+            <div>
+              <Label className="text-xs">Your Name *</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Company *</Label>
+              <Input value={company} onChange={(e) => setCompany(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Email *</Label>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Phone (optional)</Label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Anything else we should know? (optional)</Label>
+              <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} />
+            </div>
+            <Button
+              className="w-full"
+              disabled={inquiryMutation.isPending || !name.trim() || !email.trim() || !company.trim()}
+              onClick={() => {
+                if (!service) return;
+                inquiryMutation.mutate({
+                  service,
+                  name: name.trim(),
+                  email: email.trim(),
+                  company: company.trim(),
+                  phone: phone.trim() || undefined,
+                  message: message.trim() || undefined,
+                });
+              }}
+            >
+              {inquiryMutation.isPending ? "Sending..." : "Send Inquiry"}
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

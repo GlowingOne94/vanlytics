@@ -52,3 +52,33 @@ export async function sendInviteEmail({ to, orgName, token }: { to: string; orgN
     `,
   });
 }
+
+// Notifies the Vanlytics owner of a new onboarding/setup service inquiry —
+// intentionally goes to a fixed internal address, not anything
+// user-configurable, since this is a lead notification, not a customer-facing
+// transactional email.
+export async function sendServiceInquiryEmail(data: {
+  service: string;
+  name: string;
+  email: string;
+  company: string;
+  phone?: string;
+  message?: string;
+}) {
+  await sendEmail({
+    to: ENV.serviceInquiryNotifyEmail || ENV.resendFromEmail,
+    subject: `New service inquiry: ${data.service} — ${data.company}`,
+    html: `
+      <p>New onboarding/setup service inquiry from the Vanlytics landing page.</p>
+      <ul>
+        <li><strong>Service:</strong> ${data.service}</li>
+        <li><strong>Name:</strong> ${data.name}</li>
+        <li><strong>Company:</strong> ${data.company}</li>
+        <li><strong>Email:</strong> ${data.email}</li>
+        <li><strong>Phone:</strong> ${data.phone || "—"}</li>
+      </ul>
+      ${data.message ? `<p><strong>Message:</strong><br>${data.message.replace(/\n/g, "<br>")}</p>` : ""}
+      <p>Reply directly to this inquiry at <a href="mailto:${data.email}">${data.email}</a> to follow up and send a payment link if you decide to move forward.</p>
+    `,
+  });
+}

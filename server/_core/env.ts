@@ -7,6 +7,7 @@ export const ENV = {
   // Transactional email (password reset, invites) via Resend.
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "Vanlytics <onboarding@resend.dev>",
+  serviceInquiryNotifyEmail: process.env.SERVICE_INQUIRY_NOTIFY_EMAIL ?? "",
   // Stripe billing — leave keys blank until a Stripe account is set up;
   // billing features safely no-op with a clear error until configured.
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
