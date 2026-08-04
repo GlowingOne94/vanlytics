@@ -15,6 +15,7 @@ export const organizations = mysqlTable("organizations", {
   industryType: mysqlEnum("industryType", ["nemt", "other"]).default("other").notNull(),
   enabledModules: json("enabledModules").$type<{ driverMedical?: boolean }>(),
   planTier: mysqlEnum("planTier", ["none", "starter", "fleet", "fleet_pro", "enterprise"]).default("none").notNull(),
+  billingInterval: mysqlEnum("billingInterval", ["month", "quarter", "year"]).default("month").notNull(),
   subscriptionStatus: varchar("subscriptionStatus", { length: 50 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 100 }),
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 100 }),

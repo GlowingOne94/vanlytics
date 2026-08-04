@@ -12,8 +12,13 @@ export const ENV = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
   stripePriceStarter: process.env.STRIPE_PRICE_STARTER ?? "",
+  stripePriceStarterAnnual: process.env.STRIPE_PRICE_STARTER_ANNUAL ?? "",
   stripePriceFleet: process.env.STRIPE_PRICE_FLEET ?? "",
+  stripePriceFleetQuarterly: process.env.STRIPE_PRICE_FLEET_QUARTERLY ?? "",
   stripePriceFleetPro: process.env.STRIPE_PRICE_FLEET_PRO ?? "",
+  stripePriceFleetProQuarterly: process.env.STRIPE_PRICE_FLEET_PRO_QUARTERLY ?? "",
+  stripePriceFleetAnnual: process.env.STRIPE_PRICE_FLEET_ANNUAL ?? "",
+  stripePriceFleetProAnnual: process.env.STRIPE_PRICE_FLEET_PRO_ANNUAL ?? "",
   stripePriceExtraVehicle: process.env.STRIPE_PRICE_EXTRA_VEHICLE ?? "",
   // LLM provider config (OpenAI-compatible chat completions API)
   llmApiUrl: process.env.LLM_API_URL ?? "https://api.openai.com",

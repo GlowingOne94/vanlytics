@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,12 @@ type Plan = {
   name: string;
   price: string;
   period: string;
+  priceQuarterly?: string;
+  periodQuarterly?: string;
+  quarterlyNote?: string;
+  priceAnnual?: string;
+  periodAnnual?: string;
+  annualNote?: string;
   blurb: string;
   features: string[];
   highlight?: boolean;
@@ -32,6 +39,9 @@ const PLANS: Plan[] = [
     name: "Starter",
     price: "$49",
     period: "/month",
+    priceAnnual: "$529",
+    periodAnnual: "/year",
+    annualNote: "~$44/mo billed annually — save 10%",
     blurb: "For fleets with up to 7 vehicles",
     features: [
       "Vehicle profiles & document storage",
@@ -50,6 +60,12 @@ const PLANS: Plan[] = [
     name: "Fleet",
     price: "$99",
     period: "/month",
+    priceQuarterly: "$267",
+    periodQuarterly: "/quarter",
+    quarterlyNote: "~$89/mo billed quarterly — save 10%",
+    priceAnnual: "$999",
+    periodAnnual: "/year",
+    annualNote: "~$83/mo billed annually — save 15%",
     blurb: "For fleets up to 20 vehicles",
     highlight: true,
     features: [
@@ -70,6 +86,12 @@ const PLANS: Plan[] = [
     name: "Fleet Pro",
     price: "$149",
     period: "/month",
+    priceQuarterly: "$399",
+    periodQuarterly: "/quarter",
+    quarterlyNote: "~$133/mo billed quarterly — save 10%",
+    priceAnnual: "$1,499",
+    periodAnnual: "/year",
+    annualNote: "~$125/mo billed annually — save 15%",
     blurb: "For fleets up to 40 vehicles",
     features: [
       "Everything in Fleet, plus:",
@@ -92,6 +114,7 @@ const PLANS: Plan[] = [
 ];
 
 export default function Marketing() {
+  const [pricingInterval, setPricingInterval] = useState<"month" | "quarter" | "year">("month");
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -144,7 +167,32 @@ export default function Marketing() {
       {/* Pricing */}
       <section id="pricing" className="max-w-6xl mx-auto px-6 py-16">
         <h2 className="text-2xl font-bold text-center mb-2">Simple, transparent pricing</h2>
-        <p className="text-center text-muted-foreground mb-10">No per-driver fees. Cancel anytime.</p>
+        <p className="text-center text-muted-foreground mb-6">No per-driver fees. Cancel anytime.</p>
+        <div className="flex justify-center mb-10">
+          <div className="flex rounded-md border overflow-hidden">
+            <button
+              type="button"
+              className={`px-4 py-1.5 text-sm ${pricingInterval === "month" ? "bg-primary text-primary-foreground" : "bg-transparent"}`}
+              onClick={() => setPricingInterval("month")}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              className={`px-4 py-1.5 text-sm ${pricingInterval === "quarter" ? "bg-primary text-primary-foreground" : "bg-transparent"}`}
+              onClick={() => setPricingInterval("quarter")}
+            >
+              Quarterly — save 10%
+            </button>
+            <button
+              type="button"
+              className={`px-4 py-1.5 text-sm ${pricingInterval === "year" ? "bg-primary text-primary-foreground" : "bg-transparent"}`}
+              onClick={() => setPricingInterval("year")}
+            >
+              Annual — save 15%
+            </button>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {PLANS.map(plan => (
             <Card key={plan.key} className={plan.highlight ? "border-primary shadow-lg relative" : plan.comingSoon ? "opacity-80" : ""}>
@@ -154,10 +202,33 @@ export default function Marketing() {
               <CardContent className="p-6 flex flex-col h-full">
                 <h3 className="font-semibold text-lg">{plan.name}</h3>
                 <p className="text-xs text-muted-foreground mb-3">{plan.blurb}</p>
-                <div className="mb-4">
-                  <span className="text-3xl font-bold">{plan.price}</span>
-                  <span className="text-sm text-muted-foreground">{plan.period}</span>
+                <div className="mb-1">
+                  {pricingInterval === "year" && plan.priceAnnual ? (
+                    <>
+                      <span className="text-3xl font-bold">{plan.priceAnnual}</span>
+                      <span className="text-sm text-muted-foreground">{plan.periodAnnual}</span>
+                    </>
+                  ) : pricingInterval === "quarter" && plan.priceQuarterly ? (
+                    <>
+                      <span className="text-3xl font-bold">{plan.priceQuarterly}</span>
+                      <span className="text-sm text-muted-foreground">{plan.periodQuarterly}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-3xl font-bold">{plan.price}</span>
+                      <span className="text-sm text-muted-foreground">{plan.period}</span>
+                    </>
+                  )}
                 </div>
+                <p className="text-xs text-muted-foreground mb-4 h-4">
+                  {pricingInterval === "year" && plan.annualNote
+                    ? plan.annualNote
+                    : pricingInterval === "quarter" && plan.quarterlyNote
+                      ? plan.quarterlyNote
+                      : pricingInterval !== "month" && !plan.comingSoon
+                        ? "Billed monthly — this option isn't available for this plan"
+                        : ""}
+                </p>
                 {plan.comingSoon ? (
                   <p className="text-sm text-muted-foreground mb-6 flex-1">
                     Enterprise-scale fleet management is on the way — built for operations running more than 40 vehicles.

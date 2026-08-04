@@ -50,6 +50,13 @@ export default function Team() {
     onError: (err) => toast.error(err.message),
   });
 
+  const [billingIntervalChoice, setBillingIntervalChoice] = useState<"month" | "quarter" | "year">("month");
+  const TIER_INTERVALS: Record<string, ("month" | "quarter" | "year")[]> = {
+    starter: ["month", "year"],
+    fleet: ["month", "quarter", "year"],
+    fleet_pro: ["month", "quarter", "year"],
+  };
+  const intervalLabel = (i: "month" | "quarter" | "year") => (i === "month" ? "" : i === "quarter" ? " (quarterly)" : " (annual)");
   const checkoutMutation = trpc.billing.createCheckoutSession.useMutation({
     onSuccess: (result) => { if (result.url) window.location.href = result.url; },
     onError: (err) => toast.error(err.message),
@@ -191,9 +198,26 @@ export default function Team() {
               <>
                 {billingStatus?.hasStripeCustomer ? (
                   <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs">Billing:</Label>
+                      <div className="flex rounded-md border overflow-hidden">
+                        {(["month", "quarter", "year"] as const).map(interval => (
+                          <button
+                            key={interval}
+                            type="button"
+                            className={`px-3 py-1 text-xs ${billingIntervalChoice === interval ? "bg-primary text-primary-foreground" : "bg-transparent"}`}
+                            onClick={() => setBillingIntervalChoice(interval)}
+                          >
+                            {interval === "month" ? "Monthly" : interval === "quarter" ? "Quarterly (save 10%)" : "Annual (save 15%)"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {(["starter", "fleet", "fleet_pro"] as const).map(plan => {
-                        const isCurrent = billingStatus.planTier === plan;
+                        const eligible = TIER_INTERVALS[plan].includes(billingIntervalChoice);
+                        const effectiveInterval = eligible ? billingIntervalChoice : "month";
+                        const isCurrent = billingStatus.planTier === plan && billingStatus.billingInterval === effectiveInterval;
                         return (
                           <Button
                             key={plan}
@@ -201,13 +225,14 @@ export default function Team() {
                             variant={isCurrent ? "secondary" : "outline"}
                             disabled={isCurrent || changePlanMutation.isPending}
                             onClick={() => {
-                              if (!window.confirm(`Switch to the ${plan.replace("_", " ")} plan? You'll be charged or credited the prorated difference immediately.`)) return;
-                              changePlanMutation.mutate({ plan });
+                              const label = `${plan.replace("_", " ")}${intervalLabel(effectiveInterval)}`;
+                              if (!window.confirm(`Switch to the ${label} plan? You'll be charged or credited the prorated difference immediately.`)) return;
+                              changePlanMutation.mutate({ plan, interval: effectiveInterval });
                             }}
                           >
                             {isCurrent
-                              ? `Current Plan — ${plan.replace("_", " ")}`
-                              : changePlanMutation.isPending ? "Updating..." : `Switch to ${plan.replace("_", " ")}`}
+                              ? `Current Plan — ${plan.replace("_", " ")}${intervalLabel(effectiveInterval)}`
+                              : changePlanMutation.isPending ? "Updating..." : `Switch to ${plan.replace("_", " ")}${intervalLabel(effectiveInterval)}`}
                           </Button>
                         );
                       })}
@@ -217,18 +242,45 @@ export default function Team() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {(["starter", "fleet", "fleet_pro"] as const).map(plan => (
-                      <Button
-                        key={plan}
-                        size="sm"
-                        variant="outline"
-                        disabled={checkoutMutation.isPending}
-                        onClick={() => checkoutMutation.mutate({ plan })}
-                      >
-                        Subscribe — {plan.replace("_", " ")}
-                      </Button>
-                    ))}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs">Billing:</Label>
+                      <div className="flex rounded-md border overflow-hidden">
+                        {(["month", "quarter", "year"] as const).map(interval => (
+                          <button
+                            key={interval}
+                            type="button"
+                            className={`px-3 py-1 text-xs ${billingIntervalChoice === interval ? "bg-primary text-primary-foreground" : "bg-transparent"}`}
+                            onClick={() => setBillingIntervalChoice(interval)}
+                          >
+                            {interval === "month" ? "Monthly" : interval === "quarter" ? "Quarterly (save 10%)" : "Annual (save 15%)"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(["starter", "fleet", "fleet_pro"] as const).map(plan => {
+                        const eligible = TIER_INTERVALS[plan].includes(billingIntervalChoice);
+                        const effectiveInterval = eligible ? billingIntervalChoice : "month";
+                        return (
+                          <Button
+                            key={plan}
+                            size="sm"
+                            variant="outline"
+                            disabled={checkoutMutation.isPending}
+                            onClick={() => checkoutMutation.mutate({ plan, interval: effectiveInterval })}
+                          >
+                            Subscribe — {plan.replace("_", " ")}{intervalLabel(effectiveInterval)}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    {billingIntervalChoice === "quarter" && (
+                      <p className="text-xs text-muted-foreground">Starter doesn't offer quarterly billing — it'll subscribe monthly instead.</p>
+                    )}
+                    {billingIntervalChoice === "year" && (
+                      <p className="text-xs text-muted-foreground">All plans support annual billing.</p>
+                    )}
                   </div>
                 )}
 

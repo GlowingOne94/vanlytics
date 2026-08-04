@@ -43,11 +43,13 @@ export function registerStripeWebhook(app: Express) {
           } else {
             const fullSession = await stripe.checkout.sessions.retrieve(session.id, { expand: ["line_items"] });
             const priceId = fullSession.line_items?.data?.[0]?.price?.id;
+            const { tier, interval } = planForPriceId(priceId);
             await db.updateOrganizationBilling(organizationId, {
               stripeCustomerId: (session.customer as string) ?? undefined,
               stripeSubscriptionId: (session.subscription as string) ?? undefined,
               subscriptionStatus: "active",
-              planTier: planForPriceId(priceId),
+              planTier: tier,
+              billingInterval: interval,
             });
           }
           break;
@@ -69,9 +71,11 @@ export function registerStripeWebhook(app: Express) {
             });
           } else {
             const priceId = subscription.items.data[0]?.price?.id;
+            const { tier, interval } = planForPriceId(priceId);
             await db.updateOrganizationBilling(org.id, {
               subscriptionStatus: subscription.status,
-              planTier: isCanceled ? "none" : planForPriceId(priceId),
+              planTier: isCanceled ? "none" : tier,
+              billingInterval: isCanceled ? "month" : interval,
             });
           }
           break;

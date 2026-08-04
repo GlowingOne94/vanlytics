@@ -4,22 +4,60 @@ import { ENV } from "./env";
 export const stripe = ENV.stripeSecretKey ? new Stripe(ENV.stripeSecretKey) : null;
 
 export type PlanTier = "starter" | "fleet" | "fleet_pro";
+export type BillingInterval = "month" | "quarter" | "year";
 
-export function priceIdForPlan(plan: PlanTier): string | null {
-  const map: Record<PlanTier, string> = {
+// Which intervals each tier actually offers. Starter skips quarterly
+// entirely; every paid tier offers monthly and annual.
+export const TIER_INTERVALS: Record<PlanTier, BillingInterval[]> = {
+  starter: ["month", "year"],
+  fleet: ["month", "quarter", "year"],
+  fleet_pro: ["month", "quarter", "year"],
+};
+
+export function intervalAvailableForTier(plan: PlanTier, interval: BillingInterval): boolean {
+  return TIER_INTERVALS[plan].includes(interval);
+}
+
+export function priceIdForPlan(plan: PlanTier, interval: BillingInterval = "month"): string | null {
+  if (!intervalAvailableForTier(plan, interval)) return null;
+
+  if (interval === "year") {
+    const annualMap: Record<PlanTier, string> = {
+      starter: ENV.stripePriceStarterAnnual,
+      fleet: ENV.stripePriceFleetAnnual,
+      fleet_pro: ENV.stripePriceFleetProAnnual,
+    };
+    return annualMap[plan] || null;
+  }
+  if (interval === "quarter") {
+    const quarterlyMap: Partial<Record<PlanTier, string>> = {
+      fleet: ENV.stripePriceFleetQuarterly,
+      fleet_pro: ENV.stripePriceFleetProQuarterly,
+    };
+    return quarterlyMap[plan] || null;
+  }
+  const monthlyMap: Record<PlanTier, string> = {
     starter: ENV.stripePriceStarter,
     fleet: ENV.stripePriceFleet,
     fleet_pro: ENV.stripePriceFleetPro,
   };
-  return map[plan] || null;
+  return monthlyMap[plan] || null;
 }
 
-export function planForPriceId(priceId: string | undefined): "starter" | "fleet" | "fleet_pro" | "none" {
-  if (!priceId) return "none";
-  if (priceId === ENV.stripePriceStarter) return "starter";
-  if (priceId === ENV.stripePriceFleet) return "fleet";
-  if (priceId === ENV.stripePriceFleetPro) return "fleet_pro";
-  return "none";
+export function planForPriceId(priceId: string | undefined): { tier: "starter" | "fleet" | "fleet_pro" | "none"; interval: BillingInterval } {
+  if (!priceId) return { tier: "none", interval: "month" };
+  const known: [string, "starter" | "fleet" | "fleet_pro", BillingInterval][] = [
+    [ENV.stripePriceStarter, "starter", "month"],
+    [ENV.stripePriceStarterAnnual, "starter", "year"],
+    [ENV.stripePriceFleet, "fleet", "month"],
+    [ENV.stripePriceFleetQuarterly, "fleet", "quarter"],
+    [ENV.stripePriceFleetAnnual, "fleet", "year"],
+    [ENV.stripePriceFleetPro, "fleet_pro", "month"],
+    [ENV.stripePriceFleetProQuarterly, "fleet_pro", "quarter"],
+    [ENV.stripePriceFleetProAnnual, "fleet_pro", "year"],
+  ];
+  const match = known.find(([id]) => id && id === priceId);
+  return match ? { tier: match[1], interval: match[2] } : { tier: "none", interval: "month" };
 }
 
 // Base vehicle limits per plan tier. "none" (no active subscription, not

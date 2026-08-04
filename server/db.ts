@@ -97,6 +97,7 @@ export async function updateOrganizationBilling(
     stripeSubscriptionId?: string;
     subscriptionStatus?: string;
     planTier?: "none" | "starter" | "fleet" | "fleet_pro" | "enterprise";
+    billingInterval?: "month" | "quarter" | "year";
     extraVehicleSlots?: number;
     stripeExtraVehicleSubscriptionId?: string | null;
   }

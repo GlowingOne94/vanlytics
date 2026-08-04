@@ -9,7 +9,7 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
 import { sendInviteEmail } from "./_core/email";
-import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, planMeetsMinimum, extraVehiclePriceId } from "./_core/stripe";
+import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, planMeetsMinimum, extraVehiclePriceId, intervalAvailableForTier } from "./_core/stripe";
 import { ENV } from "./_core/env";
 import * as db from "./db";
 
@@ -1110,24 +1110,33 @@ export const appRouter = router({
       const org = await db.getOrganizationById(ctx.organizationId);
       return {
         planTier: org?.planTier ?? "none",
+        billingInterval: org?.billingInterval ?? "month",
         subscriptionStatus: org?.subscriptionStatus ?? null,
         hasStripeCustomer: Boolean(org?.stripeCustomerId),
         isGrandfathered: org?.isGrandfathered === "yes",
       };
     }),
     changePlan: adminProcedure
-      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]) }))
+      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]), interval: z.enum(["month", "quarter", "year"]).default("month") }))
       .mutation(async ({ input, ctx }) => {
         if (!stripe) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet." });
+        }
+        if (input.interval !== "month" && !intervalAvailableForTier(input.plan, input.interval)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: input.interval === "quarter"
+              ? "Quarterly billing is only available for Fleet and Fleet Pro."
+              : "Annual billing isn't available for that plan.",
+          });
         }
         const org = await db.getOrganizationById(ctx.organizationId);
         if (!org?.stripeSubscriptionId) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "No active subscription to change — subscribe to a plan first." });
         }
-        const priceId = priceIdForPlan(input.plan as PlanTier);
+        const priceId = priceIdForPlan(input.plan as PlanTier, input.interval);
         if (!priceId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `No Stripe price configured for the ${input.plan} plan yet.` });
+          throw new TRPCError({ code: "BAD_REQUEST", message: `No Stripe price configured for the ${input.plan} plan (${input.interval}ly) yet.` });
         }
         const subscription = await stripe.subscriptions.retrieve(org.stripeSubscriptionId);
         const itemId = subscription.items.data[0]?.id;
@@ -1145,14 +1154,22 @@ export const appRouter = router({
         return { success: true } as const;
       }),
     createCheckoutSession: adminProcedure
-      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]) }))
+      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]), interval: z.enum(["month", "quarter", "year"]).default("month") }))
       .mutation(async ({ input, ctx }) => {
         if (!stripe) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet. Add your Stripe keys first." });
         }
-        const priceId = priceIdForPlan(input.plan as PlanTier);
+        if (input.interval !== "month" && !intervalAvailableForTier(input.plan, input.interval)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: input.interval === "quarter"
+              ? "Quarterly billing is only available for Fleet and Fleet Pro."
+              : "Annual billing isn't available for that plan.",
+          });
+        }
+        const priceId = priceIdForPlan(input.plan as PlanTier, input.interval);
         if (!priceId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `No Stripe price configured for the ${input.plan} plan yet.` });
+          throw new TRPCError({ code: "BAD_REQUEST", message: `No Stripe price configured for the ${input.plan} plan (${input.interval}ly) yet.` });
         }
         const org = await db.getOrganizationById(ctx.organizationId);
         const session = await stripe.checkout.sessions.create({
