@@ -35,6 +35,7 @@ export const appRouter = router({
     getSettings: orgProcedure.query(async ({ ctx }) => {
       const org = await db.getOrganizationById(ctx.organizationId);
       return {
+        name: org?.name ?? "",
         industryType: org?.industryType ?? "other",
         // Default to true when unset, so orgs created before this feature
         // existed keep showing medical tracking exactly as before.
@@ -44,6 +45,7 @@ export const appRouter = router({
     }),
     updateSettings: adminProcedure
       .input(z.object({
+        name: z.string().min(1).max(200).optional(),
         industryType: z.enum(["nemt", "other"]).optional(),
         enabledModules: z.object({ driverMedical: z.boolean().optional() }).optional(),
       }))

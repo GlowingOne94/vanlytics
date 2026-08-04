@@ -83,7 +83,7 @@ export async function getOrganizationById(id: number) {
 
 export async function updateOrganizationSettings(
   organizationId: number,
-  data: { industryType?: "nemt" | "other"; enabledModules?: { driverMedical?: boolean } }
+  data: { name?: string; industryType?: "nemt" | "other"; enabledModules?: { driverMedical?: boolean } }
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { getActiveOrgId } from "@/_core/activeOrg";
@@ -34,9 +34,15 @@ export default function Team() {
 
   const utils = trpc.useUtils();
 
+  const [nameInput, setNameInput] = useState("");
+  useEffect(() => {
+    if (orgSettings?.name) setNameInput(orgSettings.name);
+  }, [orgSettings?.name]);
+
   const updateSettingsMutation = trpc.organizations.updateSettings.useMutation({
     onSuccess: () => {
       utils.organizations.getSettings.invalidate();
+      utils.organizations.list.invalidate();
       toast.success("Settings updated");
     },
     onError: (err) => toast.error(err.message),
@@ -125,6 +131,23 @@ export default function Team() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="pb-3 border-b">
+              <Label className="text-sm">Company Name</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  className="max-w-sm"
+                />
+                <Button
+                  size="sm"
+                  disabled={updateSettingsMutation.isPending || !nameInput.trim() || nameInput === orgSettings.name}
+                  onClick={() => updateSettingsMutation.mutate({ name: nameInput.trim() })}
+                >
+                  {updateSettingsMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
             <div className="flex items-center justify-between gap-4 pb-3 border-b">
               <div>
                 <p className="text-sm font-medium">Company Code</p>
