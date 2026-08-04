@@ -220,7 +220,7 @@ export default function Marketing() {
                     </>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground mb-4 h-4">
+                <p className="text-xs text-muted-foreground mb-2 h-4">
                   {pricingInterval === "year" && plan.annualNote
                     ? plan.annualNote
                     : pricingInterval === "quarter" && plan.quarterlyNote
@@ -229,6 +229,16 @@ export default function Marketing() {
                         ? "Billed monthly — this option isn't available for this plan"
                         : ""}
                 </p>
+                {!plan.comingSoon && (plan.priceQuarterly || plan.priceAnnual) && (
+                  <div className="text-xs text-muted-foreground mb-4 space-y-0.5 border-t pt-2">
+                    {plan.priceQuarterly && (
+                      <p>Or {plan.priceQuarterly}{plan.periodQuarterly} <span className="text-green-600">(save 10%)</span></p>
+                    )}
+                    {plan.priceAnnual && (
+                      <p>Or {plan.priceAnnual}{plan.periodAnnual} <span className="text-green-600">(save 15%)</span></p>
+                    )}
+                  </div>
+                )}
                 {plan.comingSoon ? (
                   <p className="text-sm text-muted-foreground mb-6 flex-1">
                     Enterprise-scale fleet management is on the way — built for operations running more than 40 vehicles.
