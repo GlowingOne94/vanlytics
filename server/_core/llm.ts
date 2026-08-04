@@ -360,9 +360,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     messages: messages.map(normalizeMessage),
   };
 
-  if (model) {
-    payload.model = model;
-  }
+  // Always send a model — fall back to the configured default rather than
+  // silently omitting it, which is what caused "you must provide a model
+  // parameter" errors when a caller didn't pass one explicitly.
+  payload.model = model || ENV.llmDefaultModel;
 
   if (tools && tools.length > 0) {
     payload.tools = tools;
