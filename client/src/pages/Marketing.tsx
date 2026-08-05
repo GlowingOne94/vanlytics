@@ -139,6 +139,7 @@ const PLANS: Plan[] = [
       "Vehicle profiles & document storage",
       "Maintenance and repair history",
       "Preventive-maintenance reminders",
+      "DOT inspection records",
       "Expense tracking",
       "Shop and vendor records",
       "Basic driver profiles",
@@ -162,8 +163,6 @@ const PLANS: Plan[] = [
     highlight: true,
     features: [
       "Everything in Starter, plus:",
-      "Unlimited driver profiles",
-      "DOT inspection records",
       "Advanced expense reports",
       "Cost per vehicle & per mile",
       "Expiration dashboard",
@@ -311,9 +310,7 @@ export default function Marketing() {
                     ? plan.annualNote
                     : pricingInterval === "quarter" && plan.quarterlyNote
                       ? plan.quarterlyNote
-                      : pricingInterval !== "month" && !plan.comingSoon
-                        ? "Billed monthly — this option isn't available for this plan"
-                        : ""}
+                      : ""}
                 </p>
                 {!plan.comingSoon && (plan.priceQuarterly || plan.priceAnnual) && (
                   <div className="text-xs text-muted-foreground mb-4 space-y-0.5 border-t pt-2">
