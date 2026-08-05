@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Gauge, Clock, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 function groupByDate<T extends { clockInAt: string | number | Date }>(items: T[]): [string, T[]][] {
@@ -26,11 +29,15 @@ export default function MileageAnalysis() {
   const { isAdmin } = useIsAdmin();
   const [startDate, setStartDate] = useState<number | null>(null);
   const [endDate, setEndDate] = useState<number | null>(null);
+  const [vehicleFilter, setVehicleFilter] = useState("all");
+  const [driverFilter, setDriverFilter] = useState("all");
 
   const { data, isLoading } = trpc.mileageAnalysis.get.useQuery({
     startDate: startDate ?? undefined,
     endDate: endDate ?? undefined,
   });
+  const { data: vehicles } = trpc.vehicles.list.useQuery();
+  const { data: drivers } = trpc.drivers.list.useQuery();
   const utils = trpc.useUtils();
 
   const deleteShiftMutation = trpc.mileageAnalysis.deleteShift.useMutation({
@@ -40,6 +47,49 @@ export default function MileageAnalysis() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  // Filter the raw shift detail by whichever dropdowns are active.
+  const filteredDetail = useMemo(() => {
+    if (!data) return [];
+    return data.detail.filter(s =>
+      (vehicleFilter === "all" || String(s.vehicleId) === vehicleFilter) &&
+      (driverFilter === "all" || String(s.driverId) === driverFilter)
+    );
+  }, [data, vehicleFilter, driverFilter]);
+
+  // The summary cards use the backend's pre-aggregated totals when nothing
+  // is filtered (fastest, no recompute needed), but recompute from the
+  // filtered detail when a dropdown is active, so "Miles per Van" reflects
+  // just the selected driver's vans, and vice versa.
+  const isFiltered = vehicleFilter !== "all" || driverFilter !== "all";
+
+  const displayByVehicle = useMemo(() => {
+    if (!data) return [];
+    if (!isFiltered) return data.byVehicle;
+    const map = new Map<number, { vehicleId: number; vanNumber: string; totalMiles: number; shiftCount: number }>();
+    for (const s of filteredDetail) {
+      if (s.milesDriven == null) continue;
+      const entry = map.get(s.vehicleId) ?? { vehicleId: s.vehicleId, vanNumber: s.vanNumber, totalMiles: 0, shiftCount: 0 };
+      entry.totalMiles += s.milesDriven;
+      entry.shiftCount += 1;
+      map.set(s.vehicleId, entry);
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalMiles - a.totalMiles);
+  }, [data, filteredDetail, isFiltered]);
+
+  const displayByDriver = useMemo(() => {
+    if (!data) return [];
+    if (!isFiltered) return data.byDriver;
+    const map = new Map<number, { driverId: number; driverName: string; totalHours: number; shiftCount: number }>();
+    for (const s of filteredDetail) {
+      if (s.hoursWorked == null) continue;
+      const entry = map.get(s.driverId) ?? { driverId: s.driverId, driverName: s.driverName, totalHours: 0, shiftCount: 0 };
+      entry.totalHours += s.hoursWorked;
+      entry.shiftCount += 1;
+      map.set(s.driverId, entry);
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalHours - a.totalHours);
+  }, [data, filteredDetail, isFiltered]);
 
   if (isLoading) {
     return (
@@ -85,9 +135,32 @@ export default function MileageAnalysis() {
               }}
             />
           </div>
-          {(startDate || endDate) && (
-            <Button variant="ghost" size="sm" onClick={() => { setStartDate(null); setEndDate(null); }}>
-              Clear (show all time)
+          <div>
+            <Label className="text-xs">Vehicle</Label>
+            <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Vehicles</SelectItem>
+                {vehicles?.map(v => <SelectItem key={v.id} value={String(v.id)}>Van {v.vanNumber}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Driver</Label>
+            <Select value={driverFilter} onValueChange={setDriverFilter}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Drivers</SelectItem>
+                {drivers?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {(startDate || endDate || isFiltered) && (
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => { setStartDate(null); setEndDate(null); setVehicleFilter("all"); setDriverFilter("all"); }}
+            >
+              Clear All Filters
             </Button>
           )}
         </div>
@@ -101,10 +174,10 @@ export default function MileageAnalysis() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {!data || data.byVehicle.length === 0 ? (
+            {displayByVehicle.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-6">No completed shifts recorded yet.</p>
             ) : (
-              data.byVehicle.map(v => (
+              displayByVehicle.map(v => (
                 <div key={v.vehicleId} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
                   <span>Van {v.vanNumber}</span>
                   <span className="text-muted-foreground">{v.totalMiles.toLocaleString()} mi · {v.shiftCount} shift{v.shiftCount === 1 ? "" : "s"}</span>
@@ -121,10 +194,10 @@ export default function MileageAnalysis() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {!data || data.byDriver.length === 0 ? (
+            {displayByDriver.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-6">No completed shifts recorded yet.</p>
             ) : (
-              data.byDriver.map(d => (
+              displayByDriver.map(d => (
                 <div key={d.driverId} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
                   <span>{d.driverName}</span>
                   <span className="text-muted-foreground">{d.totalHours.toLocaleString()} hrs · {d.shiftCount} shift{d.shiftCount === 1 ? "" : "s"}</span>
@@ -140,10 +213,12 @@ export default function MileageAnalysis() {
           <CardTitle className="text-base">History</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          {!data || data.detail.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No shifts logged yet.</p>
+          {filteredDetail.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              {isFiltered ? "No shifts match the selected filters." : "No shifts logged yet."}
+            </p>
           ) : (
-            groupByDate(data.detail).map(([dateLabel, shifts]) => (
+            groupByDate(filteredDetail).map(([dateLabel, shifts]) => (
               <div key={dateLabel}>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{dateLabel}</p>
                 <div className="space-y-1">

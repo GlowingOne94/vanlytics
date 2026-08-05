@@ -1823,7 +1823,9 @@ export async function getMileageAnalysis(organizationId: number, opts?: { startD
 
   const detail = shifts.map(s => ({
     id: s.id,
+    driverId: s.driverId,
     driverName: allDrivers.find(d => d.id === s.driverId)?.name ?? "Unknown",
+    vehicleId: s.vehicleId,
     vanNumber: allVehicles.find(v => v.id === s.vehicleId)?.vanNumber ?? "Unknown",
     clockInAt: s.clockInAt,
     clockInMileage: s.clockInMileage,
