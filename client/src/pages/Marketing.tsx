@@ -229,6 +229,9 @@ export default function Marketing() {
           <Link href="/login"><Button size="lg">Get Started</Button></Link>
           <a href="#pricing"><Button size="lg" variant="outline">View Pricing</Button></a>
         </div>
+        <p className="text-sm text-muted-foreground mt-4">
+          Creating an account is free — explore the platform with no commitment. A plan is only needed once you're ready to add your fleet.
+        </p>
       </section>
 
       {/* Features */}
