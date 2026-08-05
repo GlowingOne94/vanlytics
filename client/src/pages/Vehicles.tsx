@@ -20,7 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter, Plus, Search, Truck, Printer } from "lucide-react";
+import {
+  Tabs, TabsList, TabsTrigger,
+} from "@/components/ui/tabs";
+import { Filter, Plus, Search, Truck, Printer, Archive } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -72,6 +75,10 @@ export default function Vehicles() {
   });
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [fleetView, setFleetView] = useState<"active" | "retired">("active");
+
+  const retiredCount = useMemo(() => (vehicles ?? []).filter(v => v.status === "retired").length, [vehicles]);
+  const activeCount = useMemo(() => (vehicles ?? []).filter(v => v.status !== "retired").length, [vehicles]);
 
   const filtered = useMemo(() => {
     return vehicles?.filter((v) => {
@@ -80,10 +87,14 @@ export default function Vehicles() {
         v.vin.toLowerCase().includes(search.toLowerCase()) ||
         (v.licensePlate || "").toLowerCase().includes(search.toLowerCase()) ||
         (v.assignedDriver || "").toLowerCase().includes(search.toLowerCase());
+      // Retired Fleet tab shows only retired vehicles. Active Fleet tab
+      // shows everything else — a van being "Down" or "At Shop" still
+      // belongs to your active fleet, it's just having a bad week.
+      const matchesFleetView = fleetView === "retired" ? v.status === "retired" : v.status !== "retired";
       const matchesStatus = statusFilter === "all" || v.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesFleetView && matchesStatus;
     });
-  }, [vehicles, search, statusFilter]);
+  }, [vehicles, search, statusFilter, fleetView]);
 
   const handleCreate = () => {
     if (!form.vanNumber || !form.vin) {
@@ -162,7 +173,7 @@ export default function Vehicles() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Fleet</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {vehicles?.length ?? 0} vehicles in fleet
+            {fleetView === "retired" ? retiredCount : activeCount} vehicle{(fleetView === "retired" ? retiredCount : activeCount) === 1 ? "" : "s"} {fleetView === "retired" ? "retired" : "in active fleet"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -295,6 +306,17 @@ export default function Vehicles() {
         </div>
       </div>
 
+      <Tabs value={fleetView} onValueChange={(v) => { setFleetView(v as "active" | "retired"); setStatusFilter("all"); }}>
+        <TabsList>
+          <TabsTrigger value="active">
+            <Truck className="h-3.5 w-3.5 mr-1.5" /> Active Fleet ({activeCount})
+          </TabsTrigger>
+          <TabsTrigger value="retired">
+            <Archive className="h-3.5 w-3.5 mr-1.5" /> Retired ({retiredCount})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Search + Filter */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative max-w-sm flex-1 min-w-[200px]">
@@ -306,6 +328,7 @@ export default function Vehicles() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {fleetView === "active" && (
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[160px]">
             <Filter className="h-4 w-4 mr-1" />
@@ -317,9 +340,9 @@ export default function Vehicles() {
             <SelectItem value="down">Down</SelectItem>
             <SelectItem value="awaiting_parts">Awaiting Parts</SelectItem>
             <SelectItem value="at_shop">At Shop</SelectItem>
-            <SelectItem value="retired">Retired</SelectItem>
           </SelectContent>
         </Select>
+        )}
       </div>
 
       {/* Vehicle Grid */}
