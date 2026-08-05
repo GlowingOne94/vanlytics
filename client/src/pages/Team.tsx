@@ -61,6 +61,9 @@ export default function Team() {
     starter: ["month", "year"],
     fleet: ["month", "quarter", "year"],
     fleet_pro: ["month", "quarter", "year"],
+    enterprise_50: ["month"],
+    enterprise_100: ["month"],
+    enterprise_200: ["month"],
   };
   const intervalLabel = (i: "month" | "quarter" | "year") => (i === "month" ? "" : i === "quarter" ? " (quarterly)" : " (annual)");
   const checkoutMutation = trpc.billing.createCheckoutSession.useMutation({
@@ -237,7 +240,7 @@ export default function Team() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {(["starter", "fleet", "fleet_pro"] as const).map(plan => {
+                      {(["starter", "fleet", "fleet_pro", "enterprise_50", "enterprise_100", "enterprise_200"] as const).map(plan => {
                         const eligible = TIER_INTERVALS[plan].includes(billingIntervalChoice);
                         const effectiveInterval = eligible ? billingIntervalChoice : "month";
                         const isCurrent = billingStatus.planTier === plan && billingStatus.billingInterval === effectiveInterval;
@@ -282,7 +285,7 @@ export default function Team() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {(["starter", "fleet", "fleet_pro"] as const).map(plan => {
+                      {(["starter", "fleet", "fleet_pro", "enterprise_50", "enterprise_100", "enterprise_200"] as const).map(plan => {
                         const eligible = TIER_INTERVALS[plan].includes(billingIntervalChoice);
                         const effectiveInterval = eligible ? billingIntervalChoice : "month";
                         return (

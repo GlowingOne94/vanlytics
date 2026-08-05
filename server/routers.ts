@@ -9,7 +9,7 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
 import { sendInviteEmail, sendServiceInquiryEmail } from "./_core/email";
-import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, planMeetsMinimum, extraVehiclePriceId, intervalAvailableForTier } from "./_core/stripe";
+import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, PLAN_COMPANY_LIMITS, migrationIncludedForTier, planMeetsMinimum, extraVehiclePriceId, intervalAvailableForTier } from "./_core/stripe";
 import { ENV } from "./_core/env";
 import * as db from "./db";
 
@@ -69,15 +69,21 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const adminOrgs = await db.getUserAdminOrgTiers(ctx.user.id);
         const isGrandfathered = adminOrgs.some(o => o.isGrandfathered === "yes");
-        const eligibleForTwo = adminOrgs.some(o => planMeetsMinimum(o.planTier ?? "none", "fleet"));
-        const maxCompanies = isGrandfathered ? Infinity : eligibleForTwo ? 2 : 1;
+        // Use the highest company-limit any of their existing companies'
+        // plans allows — e.g. one Enterprise company removes the cap
+        // entirely, even if their other company is still on Starter.
+        const highestLimit = adminOrgs.reduce(
+          (max, o) => Math.max(max, PLAN_COMPANY_LIMITS[o.planTier ?? "none"] ?? 1),
+          1
+        );
+        const maxCompanies = isGrandfathered ? Infinity : highestLimit;
 
         if (adminOrgs.length >= maxCompanies) {
           throw new TRPCError({
             code: "FORBIDDEN",
-            message: eligibleForTwo
-              ? "Your plan allows up to 2 companies. This account already administers that many."
-              : "The Starter plan allows 1 company. Upgrade an existing company to Fleet or higher to create a second one.",
+            message: maxCompanies <= 1
+              ? "The Starter plan allows 1 company. Upgrade an existing company to Fleet or higher to create a second one."
+              : `Your plan allows up to ${maxCompanies} companies. This account already administers that many. Upgrade to an Enterprise plan for unlimited companies.`,
           });
         }
 
@@ -1120,10 +1126,11 @@ export const appRouter = router({
         subscriptionStatus: org?.subscriptionStatus ?? null,
         hasStripeCustomer: Boolean(org?.stripeCustomerId),
         isGrandfathered: org?.isGrandfathered === "yes",
+        migrationIncluded: migrationIncludedForTier(org?.planTier ?? "none"),
       };
     }),
     changePlan: adminProcedure
-      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]), interval: z.enum(["month", "quarter", "year"]).default("month") }))
+      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro", "enterprise_50", "enterprise_100", "enterprise_200"]), interval: z.enum(["month", "quarter", "year"]).default("month") }))
       .mutation(async ({ input, ctx }) => {
         if (!stripe) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet." });
@@ -1160,7 +1167,7 @@ export const appRouter = router({
         return { success: true } as const;
       }),
     createCheckoutSession: adminProcedure
-      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro"]), interval: z.enum(["month", "quarter", "year"]).default("month") }))
+      .input(z.object({ plan: z.enum(["starter", "fleet", "fleet_pro", "enterprise_50", "enterprise_100", "enterprise_200"]), interval: z.enum(["month", "quarter", "year"]).default("month") }))
       .mutation(async ({ input, ctx }) => {
         if (!stripe) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Billing isn't configured yet. Add your Stripe keys first." });
@@ -1706,7 +1713,7 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
   serviceInquiries: router({
     submit: publicProcedure
       .input(z.object({
-        service: z.enum(["demo", "migration"]),
+        service: z.enum(["demo", "migration", "enterprise"]),
         name: z.string().min(1).max(200),
         email: z.string().email(),
         company: z.string().min(1).max(200),
@@ -1714,7 +1721,10 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
         message: z.string().max(2000).optional(),
       }))
       .mutation(async ({ input }) => {
-        const serviceLabel = input.service === "demo" ? "Guided Setup Demo ($50)" : "Full Migration & Setup";
+        const serviceLabel =
+          input.service === "demo" ? "Guided Setup Demo ($50)" :
+          input.service === "enterprise" ? "Enterprise Plan Inquiry" :
+          "Full Migration & Setup";
         await sendServiceInquiryEmail({
           service: serviceLabel,
           name: input.name,

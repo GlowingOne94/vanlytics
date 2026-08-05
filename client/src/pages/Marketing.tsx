@@ -51,8 +51,65 @@ const SERVICES = [
   },
 ];
 
+const ENTERPRISE_TIERS = [
+  {
+    key: "enterprise_50",
+    name: "Enterprise 50",
+    cap: "Up to 50 vehicles",
+    price: "$175",
+    period: "/month",
+    perVehicle: "~$3.50 per vehicle",
+    features: [
+      "Everything in Fleet Pro, plus:",
+      "Unlimited companies/entities",
+      "Unlimited administrative users",
+      "Priority support",
+    ],
+    custom: false,
+  },
+  {
+    key: "enterprise_100",
+    name: "Enterprise 100",
+    cap: "Up to 100 vehicles",
+    price: "$300",
+    period: "/month",
+    perVehicle: "~$3.00 per vehicle",
+    features: [
+      "Everything in Enterprise 50, plus:",
+      "Free database migration & setup",
+      "Dedicated onboarding",
+    ],
+    custom: false,
+  },
+  {
+    key: "enterprise_200",
+    name: "Enterprise 200",
+    cap: "Up to 200 vehicles",
+    price: "$500",
+    period: "/month",
+    perVehicle: "~$2.50 per vehicle",
+    features: [
+      "Everything in Enterprise 100, plus:",
+      "Dedicated account contact",
+      "Custom onboarding schedule",
+    ],
+    custom: false,
+  },
+  {
+    key: "enterprise_custom",
+    name: "200+ Vehicles",
+    cap: "Custom pricing",
+    price: "Contact Us",
+    period: "",
+    perVehicle: null as string | null,
+    desc: "Running a larger operation? Let's talk about what you actually need — pricing, onboarding, and support built around your fleet.",
+    features: [] as string[],
+    custom: true,
+  },
+];
+
 type Plan = {
-  key: "starter" | "fleet" | "fleet_pro" | "enterprise";
+  key: "starter" | "fleet" | "fleet_pro";
   name: string;
   price: string;
   period: string;
@@ -130,27 +187,17 @@ const PLANS: Plan[] = [
     blurb: "For fleets up to 40 vehicles",
     features: [
       "Everything in Fleet, plus:",
-      "Multiple companies/entities",
+      "Up to 2 companies/entities",
       "Advanced permissions",
       "Bulk data imports (tolls; gas bills coming soon)",
-      "Unlimited administrative users",
       "Faster support",
     ],
-  },
-  {
-    key: "enterprise",
-    name: "Enterprise",
-    price: "Coming Soon",
-    period: "",
-    blurb: "For fleets over 40 vehicles",
-    features: [],
-    comingSoon: true,
   },
 ];
 
 export default function Marketing() {
   const [pricingInterval, setPricingInterval] = useState<"month" | "quarter" | "year">("month");
-  const [inquiryService, setInquiryService] = useState<"demo" | "migration" | null>(null);
+  const [inquiryService, setInquiryService] = useState<"demo" | "migration" | "enterprise" | null>(null);
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -229,7 +276,7 @@ export default function Marketing() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl mx-auto">
           {PLANS.map(plan => (
             <Card key={plan.key} className={plan.highlight ? "border-primary shadow-lg relative" : plan.comingSoon ? "opacity-80" : ""}>
               {plan.highlight && (
@@ -313,6 +360,48 @@ export default function Marketing() {
         </div>
       </section>
 
+      {/* Enterprise */}
+      <section className="max-w-6xl mx-auto px-6 py-16 border-t">
+        <h2 className="text-2xl font-bold text-center mb-2">Enterprise</h2>
+        <p className="text-center text-muted-foreground mb-10">Built for larger fleets — pick the tier that fits, upgrade anytime as you grow.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {ENTERPRISE_TIERS.map(tier => (
+            <Card key={tier.key} className={tier.custom ? "bg-gradient-to-br from-card to-primary/5 border-primary/20" : ""}>
+              <CardContent className="p-6 flex flex-col h-full">
+                <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-1">{tier.name}</p>
+                <p className="text-xs text-muted-foreground mb-4">{tier.cap}</p>
+                <div className="mb-1">
+                  <span className={tier.custom ? "text-xl font-bold" : "text-3xl font-bold"}>{tier.price}</span>
+                  {tier.period && <span className="text-sm text-muted-foreground">{tier.period}</span>}
+                </div>
+                {tier.perVehicle && <p className="text-xs text-blue-500 mb-4">{tier.perVehicle}</p>}
+                {tier.custom ? (
+                  <p className="text-sm text-muted-foreground mb-6 flex-1">{tier.desc}</p>
+                ) : (
+                  <ul className="space-y-1.5 text-xs mb-6 flex-1">
+                    {tier.features.map(f => (
+                      <li key={f} className="flex items-start gap-2">
+                        <Check className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {tier.custom ? (
+                  <Button className="w-full" onClick={() => setInquiryService("enterprise")}>
+                    Contact Us
+                  </Button>
+                ) : (
+                  <Link href="/login">
+                    <Button className="w-full" variant="outline">Get Started</Button>
+                  </Link>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
       {/* Onboarding & Setup Services */}
       <section className="max-w-6xl mx-auto px-6 py-16 border-t">
         <h2 className="text-2xl font-bold text-center mb-2">Onboarding & Setup Services</h2>
@@ -360,7 +449,7 @@ export default function Marketing() {
 function ServiceInquiryDialog({
   service, onOpenChange,
 }: {
-  service: "demo" | "migration" | null;
+  service: "demo" | "migration" | "enterprise" | null;
   onOpenChange: (open: boolean) => void;
 }) {
   const [name, setName] = useState("");
@@ -379,7 +468,7 @@ function ServiceInquiryDialog({
     setName(""); setEmail(""); setCompany(""); setPhone(""); setMessage(""); setSubmitted(false);
   };
 
-  const serviceLabel = service === "demo" ? "Guided Setup Demo ($50)" : "Full Migration & Setup";
+  const serviceLabel = service === "demo" ? "Guided Setup Demo ($50)" : service === "enterprise" ? "Enterprise Plan" : "Full Migration & Setup";
 
   return (
     <Dialog open={service !== null} onOpenChange={(open) => { onOpenChange(open); if (!open) reset(); }}>

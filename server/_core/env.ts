@@ -20,6 +20,9 @@ export const ENV = {
   stripePriceFleetProQuarterly: process.env.STRIPE_PRICE_FLEET_PRO_QUARTERLY ?? "",
   stripePriceFleetAnnual: process.env.STRIPE_PRICE_FLEET_ANNUAL ?? "",
   stripePriceFleetProAnnual: process.env.STRIPE_PRICE_FLEET_PRO_ANNUAL ?? "",
+  stripePriceEnterprise50: process.env.STRIPE_PRICE_ENTERPRISE_50 ?? "",
+  stripePriceEnterprise100: process.env.STRIPE_PRICE_ENTERPRISE_100 ?? "",
+  stripePriceEnterprise200: process.env.STRIPE_PRICE_ENTERPRISE_200 ?? "",
   stripePriceExtraVehicle: process.env.STRIPE_PRICE_EXTRA_VEHICLE ?? "",
   // LLM provider config (OpenAI-compatible chat completions API)
   llmApiUrl: process.env.LLM_API_URL ?? "https://api.openai.com",
