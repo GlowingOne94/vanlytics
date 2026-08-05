@@ -1,4 +1,4 @@
-import { bigint, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Organizations - one per customer company. Every other table (except this
@@ -64,7 +64,9 @@ export const organizationMembers = mysqlTable("organization_members", {
   userId: int("userId").notNull(),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("organization_members_org_idx").on(table.organizationId),
+]);
 
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type InsertOrganizationMember = typeof organizationMembers.$inferInsert;
@@ -83,7 +85,9 @@ export const invites = mysqlTable("invites", {
   expiresAt: timestamp("expiresAt").notNull(),
   acceptedAt: timestamp("acceptedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("invites_org_idx").on(table.organizationId),
+]);
 
 export type Invite = typeof invites.$inferSelect;
 export type InsertInvite = typeof invites.$inferInsert;
@@ -141,7 +145,9 @@ export const vehicles = mysqlTable("vehicles", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("vehicles_org_idx").on(table.organizationId),
+]);
 
 export type Vehicle = typeof vehicles.$inferSelect;
 export type InsertVehicle = typeof vehicles.$inferInsert;
@@ -163,7 +169,9 @@ export const shops = mysqlTable("shops", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("shops_org_idx").on(table.organizationId),
+]);
 
 export type Shop = typeof shops.$inferSelect;
 export type InsertShop = typeof shops.$inferInsert;
@@ -194,7 +202,9 @@ export const repairs = mysqlTable("repairs", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("repairs_org_idx").on(table.organizationId),
+]);
 
 export type Repair = typeof repairs.$inferSelect;
 export type InsertRepair = typeof repairs.$inferInsert;
@@ -211,7 +221,9 @@ export const repairDocuments = mysqlTable("repair_documents", {
   fileKey: varchar("fileKey", { length: 255 }).notNull(),
   fileType: varchar("fileType", { length: 50 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("repair_documents_org_idx").on(table.organizationId),
+]);
 
 export type RepairDocument = typeof repairDocuments.$inferSelect;
 export type InsertRepairDocument = typeof repairDocuments.$inferInsert;
@@ -229,7 +241,9 @@ export const maintenanceServices = mysqlTable("maintenance_services", {
   intervalMonths: int("intervalMonths"),
   description: text("description"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("maintenance_services_org_idx").on(table.organizationId),
+]);
 
 export type MaintenanceService = typeof maintenanceServices.$inferSelect;
 export type InsertMaintenanceService = typeof maintenanceServices.$inferInsert;
@@ -250,7 +264,9 @@ export const maintenanceRecords = mysqlTable("maintenance_records", {
   cost: decimal("cost", { precision: 10, scale: 2 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("maintenance_records_org_idx").on(table.organizationId),
+]);
 
 export type MaintenanceRecord = typeof maintenanceRecords.$inferSelect;
 export type InsertMaintenanceRecord = typeof maintenanceRecords.$inferInsert;
@@ -282,7 +298,9 @@ export const alerts = mysqlTable("alerts", {
   isRead: mysqlEnum("isRead", ["yes", "no"]).default("no").notNull(),
   isDismissed: mysqlEnum("isDismissed", ["yes", "no"]).default("no").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("alerts_org_idx").on(table.organizationId),
+]);
 
 export type Alert = typeof alerts.$inferSelect;
 export type InsertAlert = typeof alerts.$inferInsert;
@@ -308,7 +326,9 @@ export const dotInspections = mysqlTable("dot_inspections", {
   sourceRepairId: int("sourceRepairId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("dot_inspections_org_idx").on(table.organizationId),
+]);
 
 export type DotInspection = typeof dotInspections.$inferSelect;
 export type InsertDotInspection = typeof dotInspections.$inferInsert;
@@ -337,7 +357,9 @@ export const drivers = mysqlTable("drivers", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("drivers_org_idx").on(table.organizationId),
+]);
 
 export type Driver = typeof drivers.$inferSelect;
 export type InsertDriver = typeof drivers.$inferInsert;
@@ -360,7 +382,9 @@ export const driverMedicalCerts = mysqlTable("driver_medical_certs", {
   documentKey: varchar("documentKey", { length: 255 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("driver_medical_certs_org_idx").on(table.organizationId),
+]);
 
 export type DriverMedicalCert = typeof driverMedicalCerts.$inferSelect;
 export type InsertDriverMedicalCert = typeof driverMedicalCerts.$inferInsert;
@@ -380,7 +404,9 @@ export const driverAbstracts = mysqlTable("driver_abstracts", {
   documentKey: varchar("documentKey", { length: 255 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("driver_abstracts_org_idx").on(table.organizationId),
+]);
 
 export type DriverAbstract = typeof driverAbstracts.$inferSelect;
 export type InsertDriverAbstract = typeof driverAbstracts.$inferInsert;
@@ -402,7 +428,9 @@ export const driverDocuments = mysqlTable("driver_documents", {
   fileKey: varchar("fileKey", { length: 255 }).notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("driver_documents_org_idx").on(table.organizationId),
+]);
 
 export type DriverDocument = typeof driverDocuments.$inferSelect;
 export type InsertDriverDocument = typeof driverDocuments.$inferInsert;
@@ -430,7 +458,9 @@ export const routeImports = mysqlTable("route_imports", {
   uploadedByUserId: int("uploadedByUserId").notNull(),
   rowCount: int("rowCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("route_imports_org_idx").on(table.organizationId),
+]);
 
 export type RouteImport = typeof routeImports.$inferSelect;
 export type InsertRouteImport = typeof routeImports.$inferInsert;
@@ -468,7 +498,9 @@ export const trips = mysqlTable("trips", {
   assignedVehicleId: int("assignedVehicleId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("trips_org_idx").on(table.organizationId),
+]);
 
 export type Trip = typeof trips.$inferSelect;
 export type InsertTrip = typeof trips.$inferInsert;
@@ -486,7 +518,9 @@ export const tripStatusEvents = mysqlTable("trip_status_events", {
   changedByUserId: int("changedByUserId"),
   note: text("note"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("trip_status_events_org_idx").on(table.organizationId),
+]);
 
 export type TripStatusEvent = typeof tripStatusEvents.$inferSelect;
 export type InsertTripStatusEvent = typeof tripStatusEvents.$inferInsert;
@@ -509,7 +543,9 @@ export const driverPairingCodes = mysqlTable("driver_pairing_codes", {
   expiresAt: timestamp("expiresAt").notNull(),
   usedAt: timestamp("usedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("driver_pairing_codes_org_idx").on(table.organizationId),
+]);
 
 export type DriverPairingCode = typeof driverPairingCodes.$inferSelect;
 export type InsertDriverPairingCode = typeof driverPairingCodes.$inferInsert;
@@ -527,7 +563,9 @@ export const driverDevices = mysqlTable("driver_devices", {
   pairedAt: timestamp("pairedAt").defaultNow().notNull(),
   lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
   revokedAt: timestamp("revokedAt"),
-});
+}, (table) => [
+  index("driver_devices_org_idx").on(table.organizationId),
+]);
 
 export type DriverDevice = typeof driverDevices.$inferSelect;
 export type InsertDriverDevice = typeof driverDevices.$inferInsert;
@@ -548,7 +586,9 @@ export const driverShifts = mysqlTable("driver_shifts", {
   clockOutAt: timestamp("clockOutAt"),
   clockOutMileage: int("clockOutMileage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("driver_shifts_org_idx").on(table.organizationId),
+]);
 
 export type DriverShift = typeof driverShifts.$inferSelect;
 export type InsertDriverShift = typeof driverShifts.$inferInsert;
@@ -568,7 +608,9 @@ export const driverLocations = mysqlTable("driver_locations", {
   latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
   longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
   recordedAt: timestamp("recordedAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("driver_locations_org_idx").on(table.organizationId),
+]);
 
 export type DriverLocation = typeof driverLocations.$inferSelect;
 export type InsertDriverLocation = typeof driverLocations.$inferInsert;
@@ -587,7 +629,9 @@ export const tollImports = mysqlTable("toll_imports", {
   uploadedByUserId: int("uploadedByUserId").notNull(),
   rowCount: int("rowCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("toll_imports_org_idx").on(table.organizationId),
+]);
 
 export type TollImport = typeof tollImports.$inferSelect;
 export type InsertTollImport = typeof tollImports.$inferInsert;
@@ -616,7 +660,9 @@ export const tollTransactions = mysqlTable("toll_transactions", {
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("toll_transactions_org_idx").on(table.organizationId),
+]);
 
 export type TollTransaction = typeof tollTransactions.$inferSelect;
 export type InsertTollTransaction = typeof tollTransactions.$inferInsert;
