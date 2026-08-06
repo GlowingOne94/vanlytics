@@ -241,10 +241,9 @@ export default function DriverAbstracts() {
   const uploadDriverDocMutation = trpc.driverDocuments.upload.useMutation({
     onSuccess: () => {
       utils.driverDocuments.list.invalidate({ driverId: docsTarget?.driverId });
-      setUploadingDriverDoc(false);
       toast.success("Document uploaded");
     },
-    onError: (err) => { toast.error(err.message); setUploadingDriverDoc(false); },
+    onError: (err) => toast.error(err.message),
   });
   const deleteDriverDocMutation = trpc.driverDocuments.delete.useMutation({
     onSuccess: () => {
@@ -260,18 +259,39 @@ export default function DriverAbstracts() {
     setNewDocYear(String(new Date().getFullYear()));
   };
 
-  const handleDriverDocFilePicked = async (file: File) => {
+  const handleDriverDocFilePicked = async (files: File[]) => {
     if (!docsTarget) return;
     setUploadingDriverDoc(true);
-    const { base64, contentType, fileName } = await fileToBase64(file);
-    uploadDriverDocMutation.mutate({
-      driverId: docsTarget.driverId,
-      category: newDocCategory,
-      year: parseInt(newDocYear) || undefined,
-      fileName,
-      fileBase64: base64,
-      contentType,
-    });
+    try {
+      let failCount = 0;
+      for (const file of files) {
+        if (file.size > 10 * 1024 * 1024) {
+          toast.error(`Skipped ${file.name} — over 10MB`);
+          failCount++;
+          continue;
+        }
+        try {
+          const { base64, contentType, fileName } = await fileToBase64(file);
+          await uploadDriverDocMutation.mutateAsync({
+            driverId: docsTarget.driverId,
+            category: newDocCategory,
+            year: parseInt(newDocYear) || undefined,
+            fileName,
+            fileBase64: base64,
+            contentType,
+          });
+        } catch {
+          // Individual failure already surfaced via the mutation's onError
+          // toast — keep going so one bad file doesn't block the rest.
+          failCount++;
+        }
+      }
+      if (files.length > 1 && failCount === 0) {
+        toast.success(`All ${files.length} files uploaded`);
+      }
+    } finally {
+      setUploadingDriverDoc(false);
+    }
   };
 
   const loading = loadingDrivers || loadingMedical || loadingAbstract;
@@ -923,7 +943,7 @@ export default function DriverAbstracts() {
   );
 }
 
-function DriverDocFileButton({ onPick, disabled }: { onPick: (file: File) => void; disabled?: boolean }) {
+function DriverDocFileButton({ onPick, disabled }: { onPick: (files: File[]) => void; disabled?: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   return (
     <div>
@@ -931,11 +951,12 @@ function DriverDocFileButton({ onPick, disabled }: { onPick: (file: File) => voi
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         className="hidden"
         accept="image/*,.pdf,.doc,.docx"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) onPick(file);
+          const files = Array.from(e.target.files ?? []);
+          if (files.length > 0) onPick(files);
           e.target.value = "";
         }}
       />

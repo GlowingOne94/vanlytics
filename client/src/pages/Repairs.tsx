@@ -56,26 +56,34 @@ function RepairInvoices({ repairId }: { repairId: number }) {
   });
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("Max 10MB"); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      uploadMutation.mutate({
-        repairId,
-        fileName: file.name,
-        fileBase64: base64,
-        contentType: file.type,
-      });
-    };
-    reader.readAsDataURL(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    const oversized = files.filter(f => f.size > 10 * 1024 * 1024);
+    if (oversized.length > 0) {
+      toast.error(`Skipped ${oversized.length} file(s) over 10MB: ${oversized.map(f => f.name).join(", ")}`);
+    }
+
+    const validFiles = files.filter(f => f.size <= 10 * 1024 * 1024);
+    for (const file of validFiles) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(",")[1];
+        uploadMutation.mutate({
+          repairId,
+          fileName: file.name,
+          fileBase64: base64,
+          contentType: file.type,
+        });
+      };
+      reader.readAsDataURL(file);
+    }
     e.target.value = "";
   };
 
   return (
     <div>
-      <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx" onChange={handleUpload} />
+      <input ref={fileInputRef} type="file" multiple className="hidden" accept="image/*,.pdf,.doc,.docx" onChange={handleUpload} />
       <Button
         variant="ghost"
         size="icon"

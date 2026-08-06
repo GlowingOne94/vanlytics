@@ -82,3 +82,34 @@ export async function sendServiceInquiryEmail(data: {
     `,
   });
 }
+
+// Notifies the Vanlytics owner of a general "Contact Us" submission from
+// the landing page — separate from service inquiries since the fields
+// differ (a free-text subject, and email/phone where only one is required
+// rather than always requiring email).
+export async function sendContactFormEmail(data: {
+  name: string;
+  company?: string;
+  email?: string;
+  phone?: string;
+  subject: string;
+}) {
+  const replyContact = data.email
+    ? `<a href="mailto:${data.email}">${data.email}</a>`
+    : data.phone || "no contact info provided";
+  await sendEmail({
+    to: ENV.serviceInquiryNotifyEmail || "mobilitycdlnetwork@gmail.com",
+    subject: `New contact form submission: ${data.subject}`,
+    html: `
+      <p>New message from the Vanlytics landing page contact form.</p>
+      <ul>
+        <li><strong>Name:</strong> ${data.name}</li>
+        <li><strong>Company:</strong> ${data.company || "—"}</li>
+        <li><strong>Email:</strong> ${data.email || "—"}</li>
+        <li><strong>Phone:</strong> ${data.phone || "—"}</li>
+        <li><strong>Subject:</strong> ${data.subject}</li>
+      </ul>
+      <p>Reply to ${replyContact} to follow up.</p>
+    `,
+  });
+}

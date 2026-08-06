@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
-import { sendInviteEmail, sendServiceInquiryEmail } from "./_core/email";
+import { sendInviteEmail, sendServiceInquiryEmail, sendContactFormEmail } from "./_core/email";
 import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, PLAN_COMPANY_LIMITS, migrationIncludedForTier, planMeetsMinimum, extraVehiclePriceId, intervalAvailableForTier } from "./_core/stripe";
 import { ENV } from "./_core/env";
 import * as db from "./db";
@@ -1732,6 +1732,35 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
           company: input.company,
           phone: input.phone,
           message: input.message,
+        });
+        return { success: true } as const;
+      }),
+  }),
+
+  // General "Contact Us" section on the landing page — separate from
+  // service inquiries. Requires either an email or a phone number, not
+  // necessarily both.
+  contactForm: router({
+    submit: publicProcedure
+      .input(
+        z.object({
+          name: z.string().min(1).max(200),
+          company: z.string().max(200).optional(),
+          email: z.string().email().optional().or(z.literal("")),
+          phone: z.string().max(50).optional(),
+          subject: z.string().min(1).max(2000),
+        }).refine(
+          (data) => Boolean(data.email) || Boolean(data.phone),
+          { message: "Provide either an email or a phone number.", path: ["email"] }
+        )
+      )
+      .mutation(async ({ input }) => {
+        await sendContactFormEmail({
+          name: input.name,
+          company: input.company,
+          email: input.email || undefined,
+          phone: input.phone,
+          subject: input.subject,
         });
         return { success: true } as const;
       }),

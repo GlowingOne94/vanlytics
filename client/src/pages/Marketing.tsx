@@ -433,6 +433,13 @@ export default function Marketing() {
 
       <ServiceInquiryDialog service={inquiryService} onOpenChange={(open) => { if (!open) setInquiryService(null); }} />
 
+      {/* Contact Us */}
+      <section className="max-w-2xl mx-auto px-6 py-16 border-t">
+        <h2 className="text-2xl font-bold text-center mb-2">Contact Us</h2>
+        <p className="text-center text-muted-foreground mb-10">Have a question? Send us a message and we'll get back to you.</p>
+        <ContactUsForm />
+      </section>
+
       {/* Footer */}
       <footer className="border-t mt-8">
         <div className="max-w-6xl mx-auto px-6 py-8 flex items-center justify-between text-sm text-muted-foreground">
@@ -529,5 +536,84 @@ function ServiceInquiryDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ContactUsForm() {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [subject, setSubject] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const contactMutation = trpc.contactForm.submit.useMutation({
+    onSuccess: () => setSubmitted(true),
+    onError: (err) => toast.error(err.message || "Something went wrong — please try again."),
+  });
+
+  const hasContactMethod = Boolean(email.trim() || phone.trim());
+  const canSubmit = name.trim() && subject.trim() && hasContactMethod;
+
+  if (submitted) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center space-y-2">
+          <p className="font-medium">Thanks — your message is on its way.</p>
+          <p className="text-sm text-muted-foreground">We'll get back to you soon.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-xs">Name *</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Company</Label>
+            <Input value={company} onChange={(e) => setCompany(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Email</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Cell Phone</Label>
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </div>
+        </div>
+        {!hasContactMethod && (
+          <p className="text-xs text-muted-foreground">* Provide at least an email or a phone number so we can reach you back.</p>
+        )}
+        <div>
+          <Label className="text-xs">Subject *</Label>
+          <Textarea value={subject} onChange={(e) => setSubject(e.target.value)} rows={4} placeholder="What can we help with?" />
+        </div>
+        <Button
+          className="w-full"
+          disabled={!canSubmit || contactMutation.isPending}
+          onClick={() => {
+            if (!hasContactMethod) {
+              toast.error("Provide either an email or a phone number.");
+              return;
+            }
+            contactMutation.mutate({
+              name: name.trim(),
+              company: company.trim() || undefined,
+              email: email.trim() || undefined,
+              phone: phone.trim() || undefined,
+              subject: subject.trim(),
+            });
+          }}
+        >
+          {contactMutation.isPending ? "Sending..." : "Send Message"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
