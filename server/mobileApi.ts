@@ -266,4 +266,33 @@ export function registerMobileApi(app: Express) {
     await db.upsertDriverLocation(organizationId, driverId, openShift.vehicleId, parsed.data.latitude, parsed.data.longitude);
     res.json({ success: true });
   });
+
+  // ---- Timesheet: a driver's own completed shifts within a date range.
+  // The app computes its own local week boundaries and sends them here,
+  // rather than the server guessing — the server's clock is UTC, but the
+  // driver's "week" should follow their own phone's local time. Only
+  // returns completed shifts (clockOutAt set); an open shift's hours
+  // aren't finalized yet. ----
+  app.get("/api/mobile/timesheet", requireMobileAuth, async (req: Request, res: Response) => {
+    const { driverId, organizationId } = (req as any).mobileAuth as MobileTokenPayload;
+    const parsed = z.object({
+      startDate: z.coerce.number(),
+      endDate: z.coerce.number(),
+    }).safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Missing or invalid startDate/endDate." });
+      return;
+    }
+
+    const shifts = await db.getDriverShifts(organizationId, { startDate: parsed.data.startDate, endDate: parsed.data.endDate });
+    const ownCompletedShifts = shifts.filter(s => s.driverId === driverId && s.clockOutAt != null);
+
+    res.json({
+      shifts: ownCompletedShifts.map(s => ({
+        clockInAt: s.clockInAt,
+        clockOutAt: s.clockOutAt,
+        hoursWorked: Math.round(((new Date(s.clockOutAt!).getTime() - new Date(s.clockInAt).getTime()) / (1000 * 60 * 60)) * 100) / 100,
+      })),
+    });
+  });
 }
