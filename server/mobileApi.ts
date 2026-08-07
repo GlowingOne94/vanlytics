@@ -188,7 +188,12 @@ export function registerMobileApi(app: Express) {
   // ---- Clock in: pick a van, enter starting mileage ----
   app.post("/api/mobile/clock-in", requireMobileAuth, async (req: Request, res: Response) => {
     const { driverId, organizationId, deviceId } = (req as any).mobileAuth as MobileTokenPayload;
-    const parsed = z.object({ vehicleId: z.number(), mileage: z.number().min(0) }).safeParse(req.body);
+    const parsed = z.object({
+      vehicleId: z.number(),
+      mileage: z.number().min(0),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+    }).safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Select a van and enter your starting mileage." });
       return;
@@ -207,6 +212,8 @@ export function registerMobileApi(app: Express) {
       deviceId,
       clockInAt: new Date(),
       clockInMileage: parsed.data.mileage,
+      clockInLatitude: parsed.data.latitude != null ? String(parsed.data.latitude) : undefined,
+      clockInLongitude: parsed.data.longitude != null ? String(parsed.data.longitude) : undefined,
     });
 
     res.json({ success: true, shiftId: shift.id });
@@ -215,7 +222,11 @@ export function registerMobileApi(app: Express) {
   // ---- Clock out: enter ending mileage, closes the shift ----
   app.post("/api/mobile/clock-out", requireMobileAuth, async (req: Request, res: Response) => {
     const { driverId, organizationId } = (req as any).mobileAuth as MobileTokenPayload;
-    const parsed = z.object({ mileage: z.number().min(0) }).safeParse(req.body);
+    const parsed = z.object({
+      mileage: z.number().min(0),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+    }).safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Enter your ending mileage." });
       return;
@@ -232,7 +243,7 @@ export function registerMobileApi(app: Express) {
     }
 
     const clockOutAt = new Date();
-    await db.closeDriverShift(openShift.id, clockOutAt, parsed.data.mileage);
+    await db.closeDriverShift(openShift.id, clockOutAt, parsed.data.mileage, parsed.data.latitude, parsed.data.longitude);
     // Keep the vehicle's on-file mileage in sync with the latest odometer reading.
     await db.updateVehicle(organizationId, openShift.vehicleId, { mileage: parsed.data.mileage });
 

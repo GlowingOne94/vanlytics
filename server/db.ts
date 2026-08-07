@@ -1706,10 +1706,15 @@ export async function createDriverShift(data: InsertDriverShift): Promise<Driver
   return rows[0];
 }
 
-export async function closeDriverShift(id: number, clockOutAt: Date, clockOutMileage: number) {
+export async function closeDriverShift(id: number, clockOutAt: Date, clockOutMileage: number, clockOutLatitude?: number, clockOutLongitude?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(driverShifts).set({ clockOutAt, clockOutMileage }).where(eq(driverShifts.id, id));
+  await db.update(driverShifts).set({
+    clockOutAt,
+    clockOutMileage,
+    clockOutLatitude: clockOutLatitude != null ? String(clockOutLatitude) : undefined,
+    clockOutLongitude: clockOutLongitude != null ? String(clockOutLongitude) : undefined,
+  }).where(eq(driverShifts.id, id));
 }
 
 export async function deleteDriverShift(organizationId: number, id: number) {
@@ -1831,8 +1836,12 @@ export async function getMileageAnalysis(organizationId: number, opts?: { startD
     vanNumber: allVehicles.find(v => v.id === s.vehicleId)?.vanNumber ?? "Unknown",
     clockInAt: s.clockInAt,
     clockInMileage: s.clockInMileage,
+    clockInLatitude: s.clockInLatitude != null ? parseFloat(s.clockInLatitude) : null,
+    clockInLongitude: s.clockInLongitude != null ? parseFloat(s.clockInLongitude) : null,
     clockOutAt: s.clockOutAt,
     clockOutMileage: s.clockOutMileage,
+    clockOutLatitude: s.clockOutLatitude != null ? parseFloat(s.clockOutLatitude) : null,
+    clockOutLongitude: s.clockOutLongitude != null ? parseFloat(s.clockOutLongitude) : null,
     milesDriven: s.clockOutMileage != null ? s.clockOutMileage - s.clockInMileage : null,
     hoursWorked: s.clockOutAt
       ? Math.round(((new Date(s.clockOutAt).getTime() - new Date(s.clockInAt).getTime()) / (1000 * 60 * 60)) * 100) / 100

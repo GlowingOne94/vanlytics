@@ -583,8 +583,12 @@ export const driverShifts = mysqlTable("driver_shifts", {
   deviceId: varchar("deviceId", { length: 100 }),
   clockInAt: timestamp("clockInAt").notNull(),
   clockInMileage: int("clockInMileage").notNull(),
+  clockInLatitude: decimal("clockInLatitude", { precision: 10, scale: 7 }),
+  clockInLongitude: decimal("clockInLongitude", { precision: 10, scale: 7 }),
   clockOutAt: timestamp("clockOutAt"),
   clockOutMileage: int("clockOutMileage"),
+  clockOutLatitude: decimal("clockOutLatitude", { precision: 10, scale: 7 }),
+  clockOutLongitude: decimal("clockOutLongitude", { precision: 10, scale: 7 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("driver_shifts_org_idx").on(table.organizationId),

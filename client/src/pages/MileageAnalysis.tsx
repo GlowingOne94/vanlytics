@@ -9,7 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Gauge, Clock, Trash2 } from "lucide-react";
+import {
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from "@/components/ui/tabs";
+import { Gauge, Clock, Trash2, MapPin, ListChecks } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -23,6 +26,22 @@ function groupByDate<T extends { clockInAt: string | number | Date }>(items: T[]
     groups.get(dateKey)!.push(item);
   }
   return Array.from(groups.entries());
+}
+
+function GpsLink({ latitude, longitude }: { latitude: number | null; longitude: number | null }) {
+  if (latitude == null || longitude == null) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <a
+      href={`https://www.google.com/maps?q=${latitude},${longitude}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary hover:underline inline-flex items-center gap-1"
+    >
+      <MapPin className="h-3 w-3" /> View
+    </a>
+  );
 }
 
 export default function MileageAnalysis() {
@@ -166,100 +185,170 @@ export default function MileageAnalysis() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Gauge className="h-4 w-4 text-primary" /> Miles per Van
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {displayByVehicle.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">No completed shifts recorded yet.</p>
-            ) : (
-              displayByVehicle.map(v => (
-                <div key={v.vehicleId} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
-                  <span>Van {v.vanNumber}</span>
-                  <span className="text-muted-foreground">{v.totalMiles.toLocaleString()} mi · {v.shiftCount} shift{v.shiftCount === 1 ? "" : "s"}</span>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">
+            <Gauge className="h-3.5 w-3.5 mr-1.5" /> Overview
+          </TabsTrigger>
+          <TabsTrigger value="timesheet">
+            <ListChecks className="h-3.5 w-3.5 mr-1.5" /> Timesheet
+          </TabsTrigger>
+        </TabsList>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Clock className="h-4 w-4 text-primary" /> Hours per Driver
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {displayByDriver.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">No completed shifts recorded yet.</p>
-            ) : (
-              displayByDriver.map(d => (
-                <div key={d.driverId} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
-                  <span>{d.driverName}</span>
-                  <span className="text-muted-foreground">{d.totalHours.toLocaleString()} hrs · {d.shiftCount} shift{d.shiftCount === 1 ? "" : "s"}</span>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">History</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {filteredDetail.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
-              {isFiltered ? "No shifts match the selected filters." : "No shifts logged yet."}
-            </p>
-          ) : (
-            groupByDate(filteredDetail).map(([dateLabel, shifts]) => (
-              <div key={dateLabel}>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{dateLabel}</p>
-                <div className="space-y-1">
-                  {shifts.map(s => (
-                    <div key={s.id} className="flex items-center justify-between text-sm py-2 border-b last:border-0 flex-wrap gap-2">
-                      <div>
-                        <p className="font-medium">{s.driverName} — Van {s.vanNumber}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(s.clockInAt).toLocaleTimeString()}
-                          {s.clockOutAt ? ` → ${new Date(s.clockOutAt).toLocaleTimeString()}` : " (still clocked in)"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {s.clockInMileage.toLocaleString()} mi
-                          {s.clockOutMileage != null ? ` → ${s.clockOutMileage.toLocaleString()} mi` : " (odometer not yet logged)"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right text-xs text-muted-foreground">
-                          {s.milesDriven != null && <p>{s.milesDriven.toLocaleString()} mi</p>}
-                          {s.hoursWorked != null && <p>{s.hoursWorked} hrs</p>}
-                        </div>
-                        {isAdmin && (
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => {
-                            if (!window.confirm(`Remove this entry for ${s.driverName} — Van ${s.vanNumber}?`)) return;
-                            deleteShiftMutation.mutate({ id: s.id });
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                        )}
-                      </div>
+        <TabsContent value="overview" className="mt-4 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-primary" /> Miles per Van
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {displayByVehicle.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No completed shifts recorded yet.</p>
+                ) : (
+                  displayByVehicle.map(v => (
+                    <div key={v.vehicleId} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
+                      <span>Van {v.vanNumber}</span>
+                      <span className="text-muted-foreground">{v.totalMiles.toLocaleString()} mi · {v.shiftCount} shift{v.shiftCount === 1 ? "" : "s"}</span>
                     </div>
-                  ))}
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" /> Hours per Driver
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {displayByDriver.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No completed shifts recorded yet.</p>
+                ) : (
+                  displayByDriver.map(d => (
+                    <div key={d.driverId} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
+                      <span>{d.driverName}</span>
+                      <span className="text-muted-foreground">{d.totalHours.toLocaleString()} hrs · {d.shiftCount} shift{d.shiftCount === 1 ? "" : "s"}</span>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">History</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {filteredDetail.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  {isFiltered ? "No shifts match the selected filters." : "No shifts logged yet."}
+                </p>
+              ) : (
+                groupByDate(filteredDetail).map(([dateLabel, shifts]) => (
+                  <div key={dateLabel}>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{dateLabel}</p>
+                    <div className="space-y-1">
+                      {shifts.map(s => (
+                        <div key={s.id} className="flex items-center justify-between text-sm py-2 border-b last:border-0 flex-wrap gap-2">
+                          <div>
+                            <p className="font-medium">{s.driverName} — Van {s.vanNumber}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(s.clockInAt).toLocaleTimeString()}
+                              {s.clockOutAt ? ` → ${new Date(s.clockOutAt).toLocaleTimeString()}` : " (still clocked in)"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {s.clockInMileage.toLocaleString()} mi
+                              {s.clockOutMileage != null ? ` → ${s.clockOutMileage.toLocaleString()} mi` : " (odometer not yet logged)"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right text-xs text-muted-foreground">
+                              {s.milesDriven != null && <p>{s.milesDriven.toLocaleString()} mi</p>}
+                              {s.hoursWorked != null && <p>{s.hoursWorked} hrs</p>}
+                            </div>
+                            {isAdmin && (
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => {
+                                if (!window.confirm(`Remove this entry for ${s.driverName} — Van ${s.vanNumber}?`)) return;
+                                deleteShiftMutation.mutate({ id: s.id });
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="timesheet" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Timesheet</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                GPS coordinates are only recorded going forward from when this feature shipped — older shifts will show a dash.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {filteredDetail.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  {isFiltered ? "No shifts match the selected filters." : "No shifts logged yet."}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="py-2 pr-3 font-medium">Driver</th>
+                        <th className="py-2 pr-3 font-medium">Van</th>
+                        <th className="py-2 pr-3 font-medium">Clock In</th>
+                        <th className="py-2 pr-3 font-medium">In Mileage</th>
+                        <th className="py-2 pr-3 font-medium">In GPS</th>
+                        <th className="py-2 pr-3 font-medium">Clock Out</th>
+                        <th className="py-2 pr-3 font-medium">Out Mileage</th>
+                        <th className="py-2 pr-3 font-medium">Out GPS</th>
+                        <th className="py-2 pr-3 font-medium text-right">Miles</th>
+                        <th className="py-2 pr-3 font-medium text-right">Hours</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredDetail.map(s => (
+                        <tr key={s.id} className="border-b last:border-0">
+                          <td className="py-2 pr-3">{s.driverName}</td>
+                          <td className="py-2 pr-3">Van {s.vanNumber}</td>
+                          <td className="py-2 pr-3 text-muted-foreground">
+                            {new Date(s.clockInAt).toLocaleDateString()} {new Date(s.clockInAt).toLocaleTimeString()}
+                          </td>
+                          <td className="py-2 pr-3 text-muted-foreground">{s.clockInMileage.toLocaleString()} mi</td>
+                          <td className="py-2 pr-3"><GpsLink latitude={s.clockInLatitude} longitude={s.clockInLongitude} /></td>
+                          <td className="py-2 pr-3 text-muted-foreground">
+                            {s.clockOutAt ? `${new Date(s.clockOutAt).toLocaleDateString()} ${new Date(s.clockOutAt).toLocaleTimeString()}` : "Still clocked in"}
+                          </td>
+                          <td className="py-2 pr-3 text-muted-foreground">{s.clockOutMileage != null ? `${s.clockOutMileage.toLocaleString()} mi` : "—"}</td>
+                          <td className="py-2 pr-3"><GpsLink latitude={s.clockOutLatitude} longitude={s.clockOutLongitude} /></td>
+                          <td className="py-2 pr-3 text-right">{s.milesDriven != null ? s.milesDriven.toLocaleString() : "—"}</td>
+                          <td className="py-2 pr-3 text-right">{s.hoursWorked != null ? s.hoursWorked : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
