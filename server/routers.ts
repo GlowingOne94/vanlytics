@@ -1710,6 +1710,156 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
   // Public on purpose — this is a lead-capture form for prospective and
   // existing customers, not something requiring an account. It only ever
   // sends a notification email; no payment or account changes happen here.
+  // ============ PARTS INVENTORY ============
+  parts: router({
+    list: orgProcedure.query(async ({ ctx }) => {
+      return db.getParts(ctx.organizationId);
+    }),
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1).max(200),
+        category: z.string().optional(),
+        shopId: z.number().optional(),
+        invoiceReference: z.string().optional(),
+        quantityPurchased: z.number().int().min(1),
+        unitCost: z.number().min(0),
+        datePurchased: z.number(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createPart(ctx.organizationId, input);
+      }),
+    createBulk: adminProcedure
+      .input(z.object({
+        shopId: z.number().optional(),
+        invoiceReference: z.string().optional(),
+        datePurchased: z.number(),
+        lineItems: z.array(z.object({
+          name: z.string().min(1).max(200),
+          category: z.string().optional(),
+          quantity: z.number().int().min(1),
+          unitCost: z.number().min(0),
+        })).min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createPartsBulk(ctx.organizationId, input);
+      }),
+    scanInvoice: adminProcedure
+      .input(z.object({
+        imageBase64: z.string(),
+        contentType: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You read auto/fleet parts invoices and receipts and extract their contents as structured data. Only extract items that are actually printed on the invoice — never invent or guess at items that aren't clearly there. Read quantities and prices exactly as printed. Known part categories, for reference when a line item clearly matches one: AC/HVAC, Brakes, Cooling, Electrical, Engine, Exhaust, Filters, Fluids, Suspension, Tires, Transmission, Wheelchair Lift, Body, Other. If a line item doesn't clearly match one of these, leave category null rather than guessing.`,
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Extract every line item from this parts invoice, along with the shop name, invoice date, and invoice/reference number if visible." },
+                { type: "image_url", image_url: { url: `data:${input.contentType};base64,${input.imageBase64}` } },
+              ],
+            },
+          ],
+          responseFormat: {
+            type: "json_schema",
+            json_schema: {
+              name: "invoice_extraction",
+              schema: {
+                type: "object",
+                properties: {
+                  shopName: { type: ["string", "null"] },
+                  invoiceDate: { type: ["string", "null"], description: "YYYY-MM-DD if visible, else null" },
+                  invoiceReference: { type: ["string", "null"] },
+                  lineItems: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        name: { type: "string" },
+                        category: { type: ["string", "null"] },
+                        quantity: { type: "number" },
+                        unitCost: { type: "number" },
+                      },
+                      required: ["name", "quantity", "unitCost"],
+                    },
+                  },
+                },
+                required: ["lineItems"],
+              },
+              strict: false,
+            },
+          },
+        });
+
+        const rawContent = response.choices[0]?.message?.content;
+        const text = typeof rawContent === "string" ? rawContent : Array.isArray(rawContent) ? rawContent.filter((c: any) => c.type === "text").map((c: any) => c.text).join("") : "{}";
+
+        try {
+          const parsed = JSON.parse(text);
+          return {
+            shopName: parsed.shopName ?? null,
+            invoiceDate: parsed.invoiceDate ?? null,
+            invoiceReference: parsed.invoiceReference ?? null,
+            lineItems: Array.isArray(parsed.lineItems) ? parsed.lineItems : [],
+          };
+        } catch {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Couldn't read that invoice — try a clearer photo, or enter the items manually." });
+        }
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).max(200).optional(),
+        category: z.string().nullable().optional(),
+        shopId: z.number().nullable().optional(),
+        quantityPurchased: z.number().int().min(1).optional(),
+        unitCost: z.number().min(0).optional(),
+        datePurchased: z.number().optional(),
+        notes: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updatePart(ctx.organizationId, id, data as any);
+        return { success: true } as const;
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deletePart(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+    usages: router({
+      list: orgProcedure
+        .input(z.object({ partId: z.number() }))
+        .query(async ({ input, ctx }) => {
+          return db.getPartUsages(ctx.organizationId, input.partId);
+        }),
+      create: adminProcedure
+        .input(z.object({
+          partId: z.number(),
+          quantityUsed: z.number().int().min(1),
+          vehicleId: z.number(),
+          repairId: z.number().optional(),
+          dateUsed: z.number(),
+          notes: z.string().optional(),
+        }))
+        .mutation(async ({ input, ctx }) => {
+          await db.createPartUsage(ctx.organizationId, input);
+          return { success: true } as const;
+        }),
+      delete: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .mutation(async ({ input, ctx }) => {
+          await db.deletePartUsage(ctx.organizationId, input.id);
+          return { success: true } as const;
+        }),
+    }),
+  }),
+
   serviceInquiries: router({
     submit: publicProcedure
       .input(z.object({

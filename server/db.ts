@@ -27,6 +27,8 @@ import {
   driverLocations, DriverLocation, InsertDriverLocation,
   tollImports, TollImport, InsertTollImport,
   tollTransactions, TollTransaction, InsertTollTransaction,
+  parts, Part, InsertPart,
+  partUsages, PartUsage, InsertPartUsage,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -2007,4 +2009,192 @@ export async function getExpirationDashboard(organizationId: number) {
     driverMedical: sortByDays(driverMedical),
     driverAbstracts: sortByDays(driverAbstracts),
   };
+}
+
+// ============ PARTS INVENTORY ============
+
+export async function createPart(organizationId: number, data: {
+  name: string; category?: string; shopId?: number; invoiceReference?: string;
+  quantityPurchased: number; unitCost: number; datePurchased: number; notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const totalCost = data.quantityPurchased * data.unitCost;
+  const result = await db.insert(parts).values({
+    organizationId,
+    name: data.name,
+    category: data.category,
+    shopId: data.shopId,
+    invoiceReference: data.invoiceReference,
+    quantityPurchased: data.quantityPurchased,
+    quantityRemaining: data.quantityPurchased,
+    unitCost: String(data.unitCost),
+    totalCost: String(totalCost),
+    datePurchased: new Date(data.datePurchased),
+    notes: data.notes,
+  });
+  return { id: result[0].insertId };
+}
+
+// Logs every line item from a single invoice/bill at once, all sharing the
+// same shop, date, and invoice reference — used by the "Log Invoice" flow
+// (whether filled in manually or pre-filled from a scanned photo).
+export async function createPartsBulk(organizationId: number, data: {
+  shopId?: number; invoiceReference?: string; datePurchased: number;
+  lineItems: { name: string; category?: string; quantity: number; unitCost: number }[];
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (data.lineItems.length === 0) return { count: 0 };
+
+  await db.insert(parts).values(data.lineItems.map(item => ({
+    organizationId,
+    name: item.name,
+    category: item.category,
+    shopId: data.shopId,
+    invoiceReference: data.invoiceReference,
+    quantityPurchased: item.quantity,
+    quantityRemaining: item.quantity,
+    unitCost: String(item.unitCost),
+    totalCost: String(item.quantity * item.unitCost),
+    datePurchased: new Date(data.datePurchased),
+  })));
+  return { count: data.lineItems.length };
+}
+
+export async function getParts(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(parts).where(eq(parts.organizationId, organizationId)).orderBy(desc(parts.datePurchased));
+  const shops = await getShops(organizationId);
+
+  return rows.map(p => {
+    const usedSoFar = p.quantityPurchased - p.quantityRemaining;
+    const status: "in_stock" | "partially_used" | "fully_used" =
+      usedSoFar === 0 ? "in_stock" : p.quantityRemaining === 0 ? "fully_used" : "partially_used";
+    return {
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      shopId: p.shopId,
+      shopName: shops.find(s => s.id === p.shopId)?.name ?? null,
+      invoiceReference: p.invoiceReference,
+      quantityPurchased: p.quantityPurchased,
+      quantityRemaining: p.quantityRemaining,
+      unitCost: parseFloat(p.unitCost),
+      totalCost: parseFloat(p.totalCost),
+      datePurchased: p.datePurchased,
+      notes: p.notes,
+      status,
+    };
+  });
+}
+
+export async function updatePart(organizationId: number, id: number, data: {
+  name?: string; category?: string; shopId?: number | null;
+  quantityPurchased?: number; unitCost?: number; datePurchased?: number; notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [existing] = await db.select().from(parts).where(and(eq(parts.id, id), eq(parts.organizationId, organizationId)));
+  if (!existing) throw new Error("Part not found");
+
+  const usedSoFar = existing.quantityPurchased - existing.quantityRemaining;
+  const newQuantityPurchased = data.quantityPurchased ?? existing.quantityPurchased;
+  if (newQuantityPurchased < usedSoFar) {
+    throw new Error(`Can't reduce quantity below ${usedSoFar} — that many units are already marked used.`);
+  }
+  const newUnitCost = data.unitCost ?? parseFloat(existing.unitCost);
+
+  await db.update(parts).set({
+    name: data.name,
+    category: data.category,
+    shopId: data.shopId,
+    quantityPurchased: newQuantityPurchased,
+    quantityRemaining: newQuantityPurchased - usedSoFar,
+    unitCost: String(newUnitCost),
+    totalCost: String(newQuantityPurchased * newUnitCost),
+    datePurchased: data.datePurchased != null ? new Date(data.datePurchased) : undefined,
+    notes: data.notes,
+  }).where(and(eq(parts.id, id), eq(parts.organizationId, organizationId)));
+}
+
+export async function deletePart(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [usage] = await db.select().from(partUsages).where(and(eq(partUsages.partId, id), eq(partUsages.organizationId, organizationId))).limit(1);
+  if (usage) {
+    throw new Error("This part has usage history recorded against it and can't be deleted. Remove its usage entries first.");
+  }
+  await db.delete(parts).where(and(eq(parts.id, id), eq(parts.organizationId, organizationId)));
+}
+
+export async function getPartUsages(organizationId: number, partId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(partUsages)
+    .where(and(eq(partUsages.partId, partId), eq(partUsages.organizationId, organizationId)))
+    .orderBy(desc(partUsages.dateUsed));
+  const vehicles = await getVehicles(organizationId);
+
+  return rows.map(u => ({
+    id: u.id,
+    quantityUsed: u.quantityUsed,
+    vehicleId: u.vehicleId,
+    vanNumber: vehicles.find(v => v.id === u.vehicleId)?.vanNumber ?? "Unknown",
+    repairId: u.repairId,
+    dateUsed: u.dateUsed,
+    notes: u.notes,
+  }));
+}
+
+// Records a usage event and decrements the part's remaining quantity in a
+// single transaction, so the two can never drift out of sync.
+export async function createPartUsage(organizationId: number, data: {
+  partId: number; quantityUsed: number; vehicleId: number; repairId?: number; dateUsed: number; notes?: string;
+}) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+
+  await dbConn.transaction(async (tx) => {
+    const [part] = await tx.select().from(parts).where(and(eq(parts.id, data.partId), eq(parts.organizationId, organizationId)));
+    if (!part) throw new Error("Part not found");
+    if (data.quantityUsed > part.quantityRemaining) {
+      throw new Error(`Only ${part.quantityRemaining} remaining — can't use ${data.quantityUsed}.`);
+    }
+    if (data.quantityUsed <= 0) throw new Error("Quantity used must be at least 1.");
+
+    await tx.insert(partUsages).values({
+      organizationId,
+      partId: data.partId,
+      quantityUsed: data.quantityUsed,
+      vehicleId: data.vehicleId,
+      repairId: data.repairId,
+      dateUsed: new Date(data.dateUsed),
+      notes: data.notes,
+    });
+    await tx.update(parts).set({ quantityRemaining: part.quantityRemaining - data.quantityUsed })
+      .where(eq(parts.id, data.partId));
+  });
+}
+
+// Deletes a usage event and returns its quantity back to the part's
+// remaining stock, in a single transaction.
+export async function deletePartUsage(organizationId: number, id: number) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+
+  await dbConn.transaction(async (tx) => {
+    const [usage] = await tx.select().from(partUsages).where(and(eq(partUsages.id, id), eq(partUsages.organizationId, organizationId)));
+    if (!usage) throw new Error("Usage record not found");
+
+    const [part] = await tx.select().from(parts).where(eq(parts.id, usage.partId));
+    if (part) {
+      await tx.update(parts).set({ quantityRemaining: part.quantityRemaining + usage.quantityUsed })
+        .where(eq(parts.id, usage.partId));
+    }
+    await tx.delete(partUsages).where(eq(partUsages.id, id));
+  });
 }

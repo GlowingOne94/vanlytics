@@ -666,3 +666,52 @@ export const tollTransactions = mysqlTable("toll_transactions", {
 
 export type TollTransaction = typeof tollTransactions.$inferSelect;
 export type InsertTollTransaction = typeof tollTransactions.$inferInsert;
+
+/* ============================================================
+ * PARTS INVENTORY
+ * ============================================================
+ * Parts purchased ahead of any specific repair — quantityRemaining is a
+ * denormalized running total, kept in sync whenever a part_usages row is
+ * inserted or deleted, so list views can show remaining stock without
+ * summing usage history on every read.
+ */
+export const parts = mysqlTable("parts", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  category: varchar("category", { length: 50 }),
+  shopId: int("shopId"),
+  invoiceReference: varchar("invoiceReference", { length: 100 }),
+  quantityPurchased: int("quantityPurchased").notNull(),
+  quantityRemaining: int("quantityRemaining").notNull(),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
+  totalCost: decimal("totalCost", { precision: 10, scale: 2 }).notNull(),
+  datePurchased: timestamp("datePurchased").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("parts_org_idx").on(table.organizationId),
+]);
+
+export type Part = typeof parts.$inferSelect;
+export type InsertPart = typeof parts.$inferInsert;
+
+// One row per consumption event — a single purchase batch can be used
+// across several different vehicles/repairs over time, a few units at a time.
+export const partUsages = mysqlTable("part_usages", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  partId: int("partId").notNull(),
+  quantityUsed: int("quantityUsed").notNull(),
+  vehicleId: int("vehicleId").notNull(),
+  repairId: int("repairId"),
+  dateUsed: timestamp("dateUsed").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("part_usages_org_idx").on(table.organizationId),
+]);
+
+export type PartUsage = typeof partUsages.$inferSelect;
+export type InsertPartUsage = typeof partUsages.$inferInsert;
