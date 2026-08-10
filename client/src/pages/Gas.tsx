@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Fuel, Upload, Trash2, AlertTriangle, CheckCircle2, DollarSign, Droplet, Users,
+  Fuel, Upload, Trash2, AlertTriangle, CheckCircle2, DollarSign, Droplet, Users, FileSpreadsheet, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,9 +42,11 @@ export default function Gas() {
   const { isAdmin } = useIsAdmin();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [periodFilter, setPeriodFilter] = useState("all");
+  const [driverFilter, setDriverFilter] = useState("all");
 
   const { data: usage, isLoading } = trpc.gas.usage.useQuery();
   const { data: imports } = trpc.gas.imports.useQuery();
+  const { data: allDrivers } = trpc.drivers.list.useQuery();
   const utils = trpc.useUtils();
 
   const deleteImportMutation = trpc.gas.deleteImport.useMutation({
@@ -68,8 +70,11 @@ export default function Gas() {
 
   const filteredUsage = useMemo(() => {
     if (!usage) return [];
-    return periodFilter === "all" ? usage : usage.filter(u => u.periodLabel === periodFilter);
-  }, [usage, periodFilter]);
+    return usage.filter(u =>
+      (periodFilter === "all" || u.periodLabel === periodFilter) &&
+      (driverFilter === "all" || String(u.driverId) === driverFilter)
+    );
+  }, [usage, periodFilter, driverFilter]);
 
   // Combine records for the same driver across the filtered period(s) — a
   // driver might have multiple import rows if viewing "All Periods".
@@ -97,6 +102,75 @@ export default function Gas() {
   const totalGallons = filteredUsage.reduce((sum, u) => sum + (u.totalFuelUnits ?? 0), 0);
   const unmatchedCount = byDriver.filter(d => d.driverId == null).length;
 
+  const filterSuffix = () => {
+    const parts = [];
+    if (periodFilter !== "all") parts.push(periodFilter.replace(/\s+/g, "-"));
+    if (driverFilter !== "all") parts.push((allDrivers?.find(d => String(d.id) === driverFilter)?.name ?? "driver").replace(/\s+/g, "-"));
+    return parts.length ? parts.join("_") : "all";
+  };
+
+  const exportExcel = () => {
+    if (byDriver.length === 0) { toast.error("Nothing to export for the current filters"); return; }
+    const rows = byDriver.map(d => ({
+      Driver: d.driverId == null ? `Unassigned (Prompt ID ${d.driverPromptId})` : d.driverName,
+      Transactions: d.transactions,
+      "Gallons": Math.round(d.totalFuelUnits * 100) / 100,
+      "Total Spend ($)": Math.round(d.totalAmount * 100) / 100,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [{ wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 16 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Gas Usage");
+    XLSX.writeFile(wb, `gas-usage_${filterSuffix()}.xlsx`);
+  };
+
+  const exportPdf = () => {
+    if (byDriver.length === 0) { toast.error("Nothing to export for the current filters"); return; }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) { toast.error("Please allow pop-ups to print this report"); return; }
+
+    const rows = byDriver.map(d => `
+      <tr>
+        <td>${d.driverId == null ? `Unassigned (Prompt ID ${d.driverPromptId})` : d.driverName}</td>
+        <td style="text-align:right">${d.transactions}</td>
+        <td style="text-align:right">${d.totalFuelUnits.toFixed(1)}</td>
+        <td style="text-align:right">$${d.totalAmount.toFixed(2)}</td>
+      </tr>
+    `).join("");
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Gas Usage Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 32px; color: #111; }
+            h1 { font-size: 20px; margin-bottom: 2px; }
+            p.subtitle { color: #666; font-size: 12px; margin-top: 0; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; font-size: 13px; }
+            th, td { border: 1px solid #ddd; padding: 8px 10px; }
+            th { background: #1F2937; color: #fff; text-align: left; }
+            tfoot td { font-weight: bold; background: #f3f4f6; }
+          </style>
+        </head>
+        <body>
+          <h1>Gas Usage Report</h1>
+          <p class="subtitle">
+            Period: ${periodFilter === "all" ? "All Periods" : periodFilter}
+            ${driverFilter !== "all" ? ` · Driver: ${allDrivers?.find(d => String(d.id) === driverFilter)?.name ?? ""}` : ""}
+          </p>
+          <table>
+            <thead><tr><th>Driver</th><th style="text-align:right">Transactions</th><th style="text-align:right">Gallons</th><th style="text-align:right">Total Spend</th></tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot><tr><td>Total</td><td style="text-align:right">${byDriver.reduce((s, d) => s + d.transactions, 0)}</td><td style="text-align:right">${totalGallons.toFixed(1)}</td><td style="text-align:right">$${totalSpend.toFixed(2)}</td></tr></tfoot>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -107,9 +181,17 @@ export default function Gas() {
           <p className="text-muted-foreground text-sm mt-1">Fuel card usage audited by driver, using the Driver Prompt ID entered at the pump</p>
         </div>
         {isAdmin && (
-          <Button size="sm" onClick={() => setImportDialogOpen(true)}>
-            <Upload className="h-4 w-4 mr-1" /> Import Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={exportExcel}>
+              <FileSpreadsheet className="h-4 w-4 mr-1" /> Export Excel
+            </Button>
+            <Button size="sm" variant="outline" onClick={exportPdf}>
+              <FileText className="h-4 w-4 mr-1" /> Export PDF
+            </Button>
+            <Button size="sm" onClick={() => setImportDialogOpen(true)}>
+              <Upload className="h-4 w-4 mr-1" /> Import Report
+            </Button>
+          </div>
         )}
       </div>
 
@@ -127,6 +209,14 @@ export default function Gas() {
           <SelectContent>
             <SelectItem value="all">All Periods</SelectItem>
             {periods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Label className="text-xs">Driver:</Label>
+        <Select value={driverFilter} onValueChange={setDriverFilter}>
+          <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Drivers</SelectItem>
+            {allDrivers?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
