@@ -735,6 +735,7 @@ export const appRouter = router({
         ssnLast4: z.string().max(4).nullable().optional(),
         dateOfBirth: z.number().nullable().optional(),
         cdlExpiry: z.number().nullable().optional(),
+        gasCardPromptId: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -1711,6 +1712,67 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
   // existing customers, not something requiring an account. It only ever
   // sends a notification email; no payment or account changes happen here.
   // ============ PARTS INVENTORY ============
+  // ============ GAS AUDIT ============
+  gas: router({
+    usage: orgProcedure.query(async ({ ctx }) => {
+      return db.getGasUsage(ctx.organizationId);
+    }),
+    imports: orgProcedure.query(async ({ ctx }) => {
+      return db.getGasImports(ctx.organizationId);
+    }),
+    deleteImport: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteGasImport(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+    previewImport: adminProcedure
+      .input(z.object({
+        rows: z.array(z.object({
+          driverPromptId: z.string().min(1),
+          numberOfTransactions: z.number(),
+          totalAmount: z.number(),
+          avgAmount: z.number().optional(),
+          highAmount: z.number().optional(),
+          lowAmount: z.number().optional(),
+          totalFuelUnits: z.number().optional(),
+          avgFuelUnitPrice: z.number().optional(),
+          totalNonFuelAmount: z.number().optional(),
+          totalTransactionFeeAmount: z.number().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.previewGasImportRows(ctx.organizationId, input.rows);
+      }),
+    confirmImport: adminProcedure
+      .input(z.object({
+        periodLabel: z.string().min(1),
+        fileName: z.string().optional(),
+        rows: z.array(z.object({
+          driverPromptId: z.string(),
+          driverId: z.number().nullable(),
+          numberOfTransactions: z.number(),
+          totalAmount: z.number(),
+          avgAmount: z.number().optional(),
+          highAmount: z.number().optional(),
+          lowAmount: z.number().optional(),
+          totalFuelUnits: z.number().optional(),
+          avgFuelUnitPrice: z.number().optional(),
+          totalNonFuelAmount: z.number().optional(),
+          totalTransactionFeeAmount: z.number().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createGasImport(ctx.organizationId, ctx.user.id, input);
+      }),
+    assignDriver: adminProcedure
+      .input(z.object({ recordId: z.number(), driverId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.assignGasUsageDriver(ctx.organizationId, input.recordId, input.driverId);
+        return { success: true } as const;
+      }),
+  }),
+
   parts: router({
     list: orgProcedure.query(async ({ ctx }) => {
       return db.getParts(ctx.organizationId);
@@ -1720,7 +1782,6 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
         name: z.string().min(1).max(200),
         category: z.string().optional(),
         shopId: z.number().optional(),
-        invoiceReference: z.string().optional(),
         quantityPurchased: z.number().int().min(1),
         unitCost: z.number().min(0),
         datePurchased: z.number(),
@@ -1729,11 +1790,16 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
       .mutation(async ({ input, ctx }) => {
         return db.createPart(ctx.organizationId, input);
       }),
-    createBulk: adminProcedure
+    createInvoice: adminProcedure
       .input(z.object({
         shopId: z.number().optional(),
         invoiceReference: z.string().optional(),
         datePurchased: z.number(),
+        printedTotal: z.number().optional(),
+        pages: z.array(z.object({
+          imageBase64: z.string(),
+          contentType: z.string(),
+        })).default([]),
         lineItems: z.array(z.object({
           name: z.string().min(1).max(200),
           category: z.string().optional(),
@@ -1742,25 +1808,48 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
         })).min(1),
       }))
       .mutation(async ({ input, ctx }) => {
-        return db.createPartsBulk(ctx.organizationId, input);
+        const documents = [];
+        for (let i = 0; i < input.pages.length; i++) {
+          const page = input.pages[i];
+          const buffer = Buffer.from(page.imageBase64, "base64");
+          const ext = page.contentType.split("/")[1] || "jpg";
+          const key = `part-invoices/${ctx.organizationId}/${Date.now()}-page${i + 1}.${ext}`;
+          const { url, key: fileKey } = await storagePut(key, buffer, page.contentType);
+          documents.push({ fileUrl: url, fileKey, pageNumber: i + 1 });
+        }
+        return db.createPartInvoiceWithDocuments(ctx.organizationId, {
+          shopId: input.shopId,
+          invoiceReference: input.invoiceReference,
+          datePurchased: input.datePurchased,
+          printedTotal: input.printedTotal,
+          documents,
+          lineItems: input.lineItems,
+        });
       }),
     scanInvoice: adminProcedure
       .input(z.object({
-        imageBase64: z.string(),
-        contentType: z.string(),
+        pages: z.array(z.object({
+          imageBase64: z.string(),
+          contentType: z.string(),
+        })).min(1),
       }))
       .mutation(async ({ input }) => {
+        const imageParts = input.pages.map(page => ({
+          type: "image_url" as const,
+          image_url: { url: `data:${page.contentType};base64,${page.imageBase64}` },
+        }));
+
         const response = await invokeLLM({
           messages: [
             {
               role: "system",
-              content: `You read auto/fleet parts invoices and receipts and extract their contents as structured data. Only extract items that are actually printed on the invoice — never invent or guess at items that aren't clearly there. Read quantities and prices exactly as printed. Known part categories, for reference when a line item clearly matches one: AC/HVAC, Brakes, Cooling, Electrical, Engine, Exhaust, Filters, Fluids, Suspension, Tires, Transmission, Wheelchair Lift, Body, Other. If a line item doesn't clearly match one of these, leave category null rather than guessing.`,
+              content: `You read auto/fleet parts invoices and receipts — possibly spanning multiple photos of the same invoice — and extract their contents as structured data. Only extract items that are actually printed on the invoice — never invent or guess at items that aren't clearly there. Read quantities and unit prices exactly as printed; if a quantity appears to print twice in the same row due to how the invoice wraps text, that's still just one quantity, not two. Also extract the invoice's own printed total (Balance Due / Invoice Total / Total Purchase + Tax) if visible on any page — this is used to sanity-check the line items against, so read it carefully and separately from any per-line amounts. Known part categories, for reference when a line item clearly matches one: AC/HVAC, Brakes, Cooling, Electrical, Engine, Exhaust, Filters, Fluids, Suspension, Tires, Transmission, Wheelchair Lift, Body, Other. If a line item doesn't clearly match one of these, leave category null rather than guessing.`,
             },
             {
               role: "user",
               content: [
-                { type: "text", text: "Extract every line item from this parts invoice, along with the shop name, invoice date, and invoice/reference number if visible." },
-                { type: "image_url", image_url: { url: `data:${input.contentType};base64,${input.imageBase64}` } },
+                { type: "text", text: `Extract every line item from this parts invoice (${input.pages.length} page${input.pages.length === 1 ? "" : "s"} of the same invoice, in order), along with the shop name, invoice date, invoice/reference number, and the invoice's own printed total if visible.` },
+                ...imageParts,
               ],
             },
           ],
@@ -1774,6 +1863,7 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
                   shopName: { type: ["string", "null"] },
                   invoiceDate: { type: ["string", "null"], description: "YYYY-MM-DD if visible, else null" },
                   invoiceReference: { type: ["string", "null"] },
+                  printedTotal: { type: ["number", "null"], description: "The invoice's own printed total, e.g. Balance Due" },
                   lineItems: {
                     type: "array",
                     items: {
@@ -1804,10 +1894,11 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
             shopName: parsed.shopName ?? null,
             invoiceDate: parsed.invoiceDate ?? null,
             invoiceReference: parsed.invoiceReference ?? null,
+            printedTotal: parsed.printedTotal ?? null,
             lineItems: Array.isArray(parsed.lineItems) ? parsed.lineItems : [],
           };
         } catch {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Couldn't read that invoice — try a clearer photo, or enter the items manually." });
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Couldn't read that invoice — try clearer photos, or enter the items manually." });
         }
       }),
     update: adminProcedure
@@ -1832,6 +1923,16 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
         await db.deletePart(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
+    invoices: router({
+      list: orgProcedure.query(async ({ ctx }) => {
+        return db.getPartInvoices(ctx.organizationId);
+      }),
+      get: orgProcedure
+        .input(z.object({ id: z.number() }))
+        .query(async ({ input, ctx }) => {
+          return db.getPartInvoiceById(ctx.organizationId, input.id);
+        }),
+    }),
     usages: router({
       list: orgProcedure
         .input(z.object({ partId: z.number() }))

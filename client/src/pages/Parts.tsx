@@ -15,7 +15,13 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Package, Plus, Search, Trash2, Pencil, ChevronDown, ChevronUp, Camera, Sparkles, X } from "lucide-react";
+import {
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  Package, Plus, Search, Trash2, Pencil, ChevronDown, ChevronUp,
+  Camera, Sparkles, X, FileText, AlertTriangle, CheckCircle2, Image as ImageIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 const CATEGORIES = [
@@ -32,6 +38,7 @@ const STATUS_STYLES: Record<string, { label: string; className: string }> = {
 
 export default function Parts() {
   const { isAdmin } = useIsAdmin();
+  const [tab, setTab] = useState("parts");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
@@ -43,7 +50,7 @@ export default function Parts() {
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.parts.delete.useMutation({
-    onSuccess: () => { utils.parts.list.invalidate(); toast.success("Part deleted"); },
+    onSuccess: () => { utils.parts.list.invalidate(); utils.parts.invoices.list.invalidate(); toast.success("Part deleted"); },
     onError: (err) => toast.error(err.message),
   });
 
@@ -87,81 +94,94 @@ export default function Parts() {
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Used Value</p><p className="text-xl font-bold">${totalUsedValue.toFixed(2)}</p></CardContent></Card>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative max-w-sm flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search parts..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="in_stock">In Stock</SelectItem>
-            <SelectItem value="partially_used">Partially Used</SelectItem>
-            <SelectItem value="fully_used">Fully Used</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="parts"><Package className="h-3.5 w-3.5 mr-1.5" /> Parts</TabsTrigger>
+          <TabsTrigger value="invoices"><FileText className="h-3.5 w-3.5 mr-1.5" /> Invoices</TabsTrigger>
+        </TabsList>
 
-      {isLoading ? (
-        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div>
-      ) : !filtered || filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-12">No parts logged yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map(p => (
-            <Card key={p.id}>
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline" className={STATUS_STYLES[p.status].className}>{STATUS_STYLES[p.status].label}</Badge>
-                    <div>
-                      <p className="text-sm font-medium">
-                        {p.name}
-                        {p.category && <span className="text-muted-foreground font-normal"> · {p.category}</span>}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.quantityRemaining} of {p.quantityPurchased} remaining
-                        {p.shopName ? ` · ${p.shopName}` : ""}
-                        {p.invoiceReference ? ` · Inv# ${p.invoiceReference}` : ""}
-                        {` · ${new Date(p.datePurchased).toLocaleDateString()}`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <p className="text-sm font-semibold">${p.totalCost.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">${p.unitCost.toFixed(2)}/unit</p>
-                    </div>
-                    <Button
-                      variant="ghost" size="icon" className="h-7 w-7"
-                      onClick={() => setExpandedPartId(expandedPartId === p.id ? null : p.id)}
-                    >
-                      {expandedPartId === p.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </Button>
-                    {isAdmin && (
-                      <>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+        <TabsContent value="parts" className="mt-4 space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative max-w-sm flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search parts..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="in_stock">In Stock</SelectItem>
+                <SelectItem value="partially_used">Partially Used</SelectItem>
+                <SelectItem value="fully_used">Fully Used</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div>
+          ) : !filtered || filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-12">No parts logged yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {filtered.map(p => (
+                <Card key={p.id}>
+                  <CardContent className="p-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className={STATUS_STYLES[p.status].className}>{STATUS_STYLES[p.status].label}</Badge>
+                        <div>
+                          <p className="text-sm font-medium">
+                            {p.name}
+                            {p.category && <span className="text-muted-foreground font-normal"> · {p.category}</span>}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {p.quantityRemaining} of {p.quantityPurchased} remaining
+                            {p.shopName ? ` · ${p.shopName}` : ""}
+                            {p.invoiceReference ? ` · Inv# ${p.invoiceReference}` : ""}
+                            {` · ${new Date(p.datePurchased).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-sm font-semibold">${p.totalCost.toFixed(2)}</p>
+                          <p className="text-xs text-muted-foreground">${p.unitCost.toFixed(2)}/unit</p>
+                        </div>
                         <Button
-                          variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDelete(p.id, p.name)}
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          onClick={() => setExpandedPartId(expandedPartId === p.id ? null : p.id)}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          {expandedPartId === p.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                         </Button>
-                      </>
+                        {isAdmin && (
+                          <>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDelete(p.id, p.name)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {expandedPartId === p.id && (
+                      <PartUsagePanel partId={p.id} quantityRemaining={p.quantityRemaining} isAdmin={isAdmin} />
                     )}
-                  </div>
-                </div>
-                {expandedPartId === p.id && (
-                  <PartUsagePanel partId={p.id} quantityRemaining={p.quantityRemaining} isAdmin={isAdmin} />
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="invoices" className="mt-4">
+          <InvoicesTab />
+        </TabsContent>
+      </Tabs>
 
       <LogInvoiceDialog open={invoiceDialogOpen} onOpenChange={setInvoiceDialogOpen} />
       <EditPartDialog open={editDialogOpen} onOpenChange={setEditDialogOpen} part={editingPart} />
@@ -169,16 +189,115 @@ export default function Parts() {
   );
 }
 
-// ============ LOG INVOICE (multi-line-item entry, with optional AI photo scan) ============
+// ============ INVOICES TAB (the "file cabinet") ============
+
+function InvoicesTab() {
+  const { data: invoices, isLoading } = trpc.parts.invoices.list.useQuery();
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  if (isLoading) {
+    return <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>;
+  }
+  if (!invoices || invoices.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-12">No invoices logged yet — use "Log Invoice" to add one.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {invoices.map(inv => (
+        <Card key={inv.id}>
+          <CardContent className="p-3">
+            <button className="w-full flex items-center justify-between gap-3 flex-wrap text-left" onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}>
+              <div className="flex items-center gap-3">
+                <FileText className="h-4 w-4 text-primary shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {inv.shopName || "Unknown Shop"}
+                    {inv.invoiceReference ? ` · Inv# ${inv.invoiceReference}` : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(inv.datePurchased).toLocaleDateString()} · {inv.itemCount} item{inv.itemCount === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <p className="text-sm font-semibold">${inv.computedTotal.toFixed(2)}</p>
+                  {inv.printedTotal != null && (
+                    <p className={`text-xs flex items-center gap-1 justify-end ${inv.totalMismatch ? "text-yellow-500" : "text-muted-foreground"}`}>
+                      {inv.totalMismatch ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+                      Invoice says ${inv.printedTotal.toFixed(2)}
+                    </p>
+                  )}
+                </div>
+                {expandedId === inv.id ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </button>
+            {expandedId === inv.id && <InvoiceDetail invoiceId={inv.id} />}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function InvoiceDetail({ invoiceId }: { invoiceId: number }) {
+  const { data: invoice, isLoading } = trpc.parts.invoices.get.useQuery({ id: invoiceId });
+
+  if (isLoading || !invoice) {
+    return <Skeleton className="h-24 rounded-md mt-3" />;
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t space-y-4">
+      {invoice.totalMismatch && (
+        <div className="flex items-start gap-2 text-xs bg-yellow-500/10 border border-yellow-500/30 rounded-md p-2 text-yellow-600">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>Line items add up to ${invoice.computedTotal.toFixed(2)}, but the invoice's printed total is ${invoice.printedTotal?.toFixed(2)}. Worth double-checking against the original pages below.</span>
+        </div>
+      )}
+
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Line Items</p>
+        <div className="space-y-1">
+          {invoice.lineItems.map(li => (
+            <div key={li.id} className="flex items-center justify-between text-xs bg-muted/30 rounded-md px-3 py-2">
+              <span>{li.name}{li.category ? ` · ${li.category}` : ""} — Qty {li.quantityPurchased} × ${li.unitCost.toFixed(2)}</span>
+              <span className="font-medium">${li.totalCost.toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {invoice.documents.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Original Pages</p>
+          <div className="flex gap-2 flex-wrap">
+            {invoice.documents.map(doc => (
+              <a key={doc.id} href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="block">
+                <img src={doc.fileUrl} alt={`Page ${doc.pageNumber}`} className="h-24 w-20 object-cover rounded-md border hover:opacity-80" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ LOG INVOICE (multi-page photo upload + AI scan) ============
 
 type LineItem = { name: string; category: string; quantity: string; unitCost: string };
+type PendingPage = { base64: string; contentType: string; previewUrl: string };
 const BLANK_LINE: LineItem = { name: "", category: "", quantity: "1", unitCost: "" };
 
 function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [shopId, setShopId] = useState("");
   const [invoiceReference, setInvoiceReference] = useState("");
   const [datePurchased, setDatePurchased] = useState(Date.now());
+  const [printedTotal, setPrintedTotal] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([{ ...BLANK_LINE }]);
+  const [pages, setPages] = useState<PendingPage[]>([]);
   const [scanning, setScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -196,6 +315,7 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         if (!isNaN(parsed.getTime())) setDatePurchased(parsed.getTime());
       }
       if (result.invoiceReference) setInvoiceReference(result.invoiceReference);
+      if (result.printedTotal != null) setPrintedTotal(String(result.printedTotal));
 
       if (result.lineItems.length > 0) {
         setLineItems(result.lineItems.map((item: any) => ({
@@ -206,16 +326,17 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         })));
         toast.success(`Read ${result.lineItems.length} line item${result.lineItems.length === 1 ? "" : "s"} — review before saving`);
       } else {
-        toast.error("Couldn't find any line items in that photo — try a clearer shot or enter them manually.");
+        toast.error("Couldn't find any line items in those photos — try clearer shots or enter them manually.");
       }
       setScanning(false);
     },
     onError: (err) => { toast.error(err.message); setScanning(false); },
   });
 
-  const createBulkMutation = trpc.parts.createBulk.useMutation({
+  const createMutation = trpc.parts.createInvoice.useMutation({
     onSuccess: (result) => {
       utils.parts.list.invalidate();
+      utils.parts.invoices.list.invalidate();
       toast.success(`Logged ${result.count} part${result.count === 1 ? "" : "s"}`);
       reset();
       onOpenChange(false);
@@ -224,22 +345,30 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   });
 
   const reset = () => {
-    setShopId(""); setInvoiceReference(""); setDatePurchased(Date.now());
-    setLineItems([{ ...BLANK_LINE }]);
+    setShopId(""); setInvoiceReference(""); setDatePurchased(Date.now()); setPrintedTotal("");
+    setLineItems([{ ...BLANK_LINE }]); setPages([]);
   };
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAddPage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("Max 10MB"); return; }
-    setScanning(true);
+    if (file.size > 10 * 1024 * 1024) { toast.error("Max 10MB per page"); return; }
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      scanMutation.mutate({ imageBase64: base64, contentType: file.type });
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
+      setPages(prev => [...prev, { base64, contentType: file.type, previewUrl: dataUrl }]);
     };
     reader.readAsDataURL(file);
     e.target.value = "";
+  };
+
+  const removePage = (index: number) => setPages(pages.filter((_, i) => i !== index));
+
+  const handleScan = () => {
+    if (pages.length === 0) return;
+    setScanning(true);
+    scanMutation.mutate({ pages: pages.map(p => ({ imageBase64: p.base64, contentType: p.contentType })) });
   };
 
   const updateLine = (index: number, field: keyof LineItem, value: string) => {
@@ -248,11 +377,13 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const addLine = () => setLineItems([...lineItems, { ...BLANK_LINE }]);
   const removeLine = (index: number) => setLineItems(lineItems.filter((_, i) => i !== index));
 
-  const invoiceTotal = lineItems.reduce((sum, li) => {
+  const computedTotal = lineItems.reduce((sum, li) => {
     const qty = parseInt(li.quantity, 10) || 0;
     const cost = parseFloat(li.unitCost) || 0;
     return sum + qty * cost;
   }, 0);
+  const parsedPrintedTotal = printedTotal ? parseFloat(printedTotal) : null;
+  const totalMismatch = parsedPrintedTotal != null && Math.abs(parsedPrintedTotal - computedTotal) > 0.01;
 
   const handleSubmit = () => {
     const validLines = lineItems.filter(li => li.name.trim());
@@ -267,10 +398,12 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       parsedLines.push({ name: li.name.trim(), category: li.category || undefined, quantity, unitCost });
     }
 
-    createBulkMutation.mutate({
+    createMutation.mutate({
       shopId: shopId ? parseInt(shopId, 10) : undefined,
       invoiceReference: invoiceReference.trim() || undefined,
       datePurchased,
+      printedTotal: parsedPrintedTotal ?? undefined,
+      pages: pages.map(p => ({ imageBase64: p.base64, contentType: p.contentType })),
       lineItems: parsedLines,
     });
   };
@@ -280,21 +413,38 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Log Invoice</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="flex items-center gap-3">
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
-            <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={scanning}>
-              {scanning ? (
-                <>Reading invoice...</>
-              ) : (
-                <><Camera className="h-4 w-4 mr-2" /> Scan Invoice Photo</>
+          <div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAddPage} />
+              <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                <Camera className="h-4 w-4 mr-2" /> {pages.length === 0 ? "Add Invoice Photo" : "Add Another Page"}
+              </Button>
+              {pages.length > 0 && (
+                <Button type="button" onClick={handleScan} disabled={scanning}>
+                  {scanning ? "Reading..." : <><Sparkles className="h-4 w-4 mr-2" /> Scan {pages.length} Page{pages.length === 1 ? "" : "s"}</>}
+                </Button>
               )}
-            </Button>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Sparkles className="h-3 w-3" /> Auto-fills the fields below — review before saving
-            </p>
+            </div>
+            {pages.length > 0 && (
+              <div className="flex gap-2 flex-wrap mt-3">
+                {pages.map((p, i) => (
+                  <div key={i} className="relative">
+                    <img src={p.previewUrl} alt={`Page ${i + 1}`} className="h-20 w-16 object-cover rounded-md border" />
+                    <button
+                      className="absolute -top-1.5 -right-1.5 bg-background border rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                      onClick={() => removePage(i)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                    <span className="absolute bottom-0.5 right-0.5 text-[10px] bg-black/60 text-white rounded px-1">{i + 1}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-2">Multi-page invoice? Add every page before scanning, so line items and the total are read together.</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t">
             <div>
               <Label className="text-xs">Shop / Supplier</Label>
               <Select value={shopId || "__none__"} onValueChange={(v) => setShopId(v === "__none__" ? "" : v)}>
@@ -314,8 +464,12 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               />
             </div>
             <div>
-              <Label className="text-xs">Invoice # (optional)</Label>
+              <Label className="text-xs">Invoice #</Label>
               <Input value={invoiceReference} onChange={(e) => setInvoiceReference(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Printed Total</Label>
+              <Input type="number" min="0" step="0.01" value={printedTotal} onChange={(e) => setPrintedTotal(e.target.value)} placeholder="0.00" />
             </div>
           </div>
 
@@ -360,10 +514,17 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             </Button>
           </div>
 
-          <p className="text-sm text-right text-muted-foreground">Invoice Total: <span className="font-semibold text-foreground">${invoiceTotal.toFixed(2)}</span></p>
+          <div className="flex items-center justify-end gap-2 text-sm">
+            {totalMismatch && (
+              <span className="text-yellow-500 flex items-center gap-1 text-xs">
+                <AlertTriangle className="h-3.5 w-3.5" /> Doesn't match printed total (${parsedPrintedTotal?.toFixed(2)})
+              </span>
+            )}
+            <p className="text-muted-foreground">Line Items Total: <span className="font-semibold text-foreground">${computedTotal.toFixed(2)}</span></p>
+          </div>
 
-          <Button onClick={handleSubmit} disabled={createBulkMutation.isPending} className="w-full">
-            {createBulkMutation.isPending ? "Saving..." : "Log Invoice"}
+          <Button onClick={handleSubmit} disabled={createMutation.isPending} className="w-full">
+            {createMutation.isPending ? "Saving..." : "Log Invoice"}
           </Button>
         </div>
       </DialogContent>
@@ -375,7 +536,7 @@ function LogInvoiceDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 function EditPartDialog({ open, onOpenChange, part }: { open: boolean; onOpenChange: (open: boolean) => void; part: any }) {
   const [form, setForm] = useState({
-    name: "", category: "", shopId: "", invoiceReference: "", quantityPurchased: "1", unitCost: "",
+    name: "", category: "", shopId: "", quantityPurchased: "1", unitCost: "",
     datePurchased: Date.now(), notes: "",
   });
   const { data: shops } = trpc.shops.list.useQuery();
@@ -392,7 +553,6 @@ function EditPartDialog({ open, onOpenChange, part }: { open: boolean; onOpenCha
       name: part.name,
       category: part.category || "",
       shopId: part.shopId ? String(part.shopId) : "",
-      invoiceReference: part.invoiceReference || "",
       quantityPurchased: String(part.quantityPurchased),
       unitCost: String(part.unitCost),
       datePurchased: new Date(part.datePurchased).getTime(),
@@ -402,7 +562,7 @@ function EditPartDialog({ open, onOpenChange, part }: { open: boolean; onOpenCha
 
   const handleClose = (o: boolean) => {
     onOpenChange(o);
-    if (!o) setForm({ name: "", category: "", shopId: "", invoiceReference: "", quantityPurchased: "1", unitCost: "", datePurchased: Date.now(), notes: "" });
+    if (!o) setForm({ name: "", category: "", shopId: "", quantityPurchased: "1", unitCost: "", datePurchased: Date.now(), notes: "" });
   };
 
   const handleSave = () => {

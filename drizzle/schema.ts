@@ -354,6 +354,10 @@ export const drivers = mysqlTable("drivers", {
   pinHash: varchar("pinHash", { length: 255 }),
   wheelchairQualified: mysqlEnum("wheelchairQualified", ["yes", "no"]).default("yes").notNull(),
   twoPersonAssist: mysqlEnum("twoPersonAssist", ["yes", "no"]).default("no").notNull(),
+  // The Driver Prompt ID they enter at the fuel pump — entered by the
+  // person themselves, so unlike the physical card it stays reliably tied
+  // to them even as cards get moved between vehicles.
+  gasCardPromptId: varchar("gasCardPromptId", { length: 20 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -679,13 +683,51 @@ export type InsertTollTransaction = typeof tollTransactions.$inferInsert;
  * inserted or deleted, so list views can show remaining stock without
  * summing usage history on every read.
  */
+/* ============================================================
+ * PART INVOICES — a real entity, not just a string on each part.
+ * One invoice can have multiple scanned pages (partInvoiceDocuments) and
+ * multiple line items (parts.invoiceId). printedTotal is what the invoice
+ * itself says it totals to, kept separately from the sum of line items so
+ * a mismatch can be flagged rather than silently trusted.
+ * ============================================================
+ */
+export const partInvoices = mysqlTable("part_invoices", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  shopId: int("shopId"),
+  invoiceReference: varchar("invoiceReference", { length: 100 }),
+  datePurchased: timestamp("datePurchased").notNull(),
+  printedTotal: decimal("printedTotal", { precision: 10, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("part_invoices_org_idx").on(table.organizationId),
+]);
+
+export type PartInvoice = typeof partInvoices.$inferSelect;
+export type InsertPartInvoice = typeof partInvoices.$inferInsert;
+
+export const partInvoiceDocuments = mysqlTable("part_invoice_documents", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  invoiceId: int("invoiceId").notNull(),
+  pageNumber: int("pageNumber").notNull(),
+  fileUrl: text("fileUrl").notNull(),
+  fileKey: varchar("fileKey", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("part_invoice_documents_org_idx").on(table.organizationId),
+]);
+
+export type PartInvoiceDocument = typeof partInvoiceDocuments.$inferSelect;
+export type InsertPartInvoiceDocument = typeof partInvoiceDocuments.$inferInsert;
+
 export const parts = mysqlTable("parts", {
   id: int("id").autoincrement().primaryKey(),
   organizationId: int("organizationId").notNull(),
   name: varchar("name", { length: 200 }).notNull(),
   category: varchar("category", { length: 50 }),
   shopId: int("shopId"),
-  invoiceReference: varchar("invoiceReference", { length: 100 }),
+  invoiceId: int("invoiceId"),
   quantityPurchased: int("quantityPurchased").notNull(),
   quantityRemaining: int("quantityRemaining").notNull(),
   unitCost: decimal("unitCost", { precision: 10, scale: 2 }).notNull(),
@@ -719,3 +761,52 @@ export const partUsages = mysqlTable("part_usages", {
 
 export type PartUsage = typeof partUsages.$inferSelect;
 export type InsertPartUsage = typeof partUsages.$inferInsert;
+
+/* ============================================================
+ * GAS AUDIT
+ * ============================================================
+ * Monthly fuel card summary reports are matched by Driver Prompt ID
+ * (drivers.gasCardPromptId) rather than by physical card number — the
+ * prompt ID is entered by the driver themselves at every pump, so it
+ * stays reliable even as physical cards get moved between vehicles.
+ */
+export const gasImports = mysqlTable("gas_imports", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  periodLabel: varchar("periodLabel", { length: 50 }).notNull(),
+  fileName: varchar("fileName", { length: 255 }),
+  uploadedByUserId: int("uploadedByUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("gas_imports_org_idx").on(table.organizationId),
+]);
+
+export type GasImport = typeof gasImports.$inferSelect;
+export type InsertGasImport = typeof gasImports.$inferInsert;
+
+// One row per Driver Prompt ID per monthly import — driverId is null when
+// the prompt ID in the file doesn't match any known driver yet, so it can
+// be flagged and assigned rather than silently dropped or mis-attributed.
+export const gasUsageRecords = mysqlTable("gas_usage_records", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  importId: int("importId").notNull(),
+  driverId: int("driverId"),
+  driverPromptId: varchar("driverPromptId", { length: 20 }).notNull(),
+  numberOfTransactions: int("numberOfTransactions").notNull(),
+  totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
+  avgAmount: decimal("avgAmount", { precision: 10, scale: 2 }),
+  highAmount: decimal("highAmount", { precision: 10, scale: 2 }),
+  lowAmount: decimal("lowAmount", { precision: 10, scale: 2 }),
+  totalFuelUnits: decimal("totalFuelUnits", { precision: 10, scale: 3 }),
+  avgFuelUnitPrice: decimal("avgFuelUnitPrice", { precision: 10, scale: 4 }),
+  totalNonFuelAmount: decimal("totalNonFuelAmount", { precision: 10, scale: 2 }),
+  totalTransactionFeeAmount: decimal("totalTransactionFeeAmount", { precision: 10, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("gas_usage_records_org_idx").on(table.organizationId),
+]);
+
+export type GasUsageRecord = typeof gasUsageRecords.$inferSelect;
+export type InsertGasUsageRecord = typeof gasUsageRecords.$inferInsert;
+

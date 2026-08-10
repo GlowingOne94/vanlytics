@@ -13,6 +13,7 @@ import Vehicles from "./pages/Vehicles";
 import VehicleDetail from "./pages/VehicleDetail";
 import Repairs from "./pages/Repairs";
 import Parts from "./pages/Parts";
+import Gas from "./pages/Gas";
 import Maintenance from "./pages/Maintenance";
 import DotInspections from "./pages/DotInspections";
 import DriverAbstracts from "./pages/DriverAbstracts";
@@ -38,6 +39,7 @@ function AuthenticatedApp() {
         <Route path="/vehicles/:id" component={VehicleDetail} />
         <Route path="/repairs" component={Repairs} />
         <Route path="/parts" component={Parts} />
+        <Route path="/gas" component={Gas} />
         <Route path="/maintenance" component={Maintenance} />
         <Route path="/dot-inspections" component={DotInspections} />
         <Route path="/drivers" component={DriverAbstracts} />

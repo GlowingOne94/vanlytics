@@ -66,7 +66,7 @@ export default function DriverAbstracts() {
   const [editingDriverId, setEditingDriverId] = useState<number | null>(null);
   const [driverForm, setDriverForm] = useState({
     name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null as string | null,
-    status: "active" as "active" | "archived" | "disqualified", notes: "",
+    status: "active" as "active" | "archived" | "disqualified", gasCardPromptId: "", notes: "",
   });
 
   const createDriverMutation = trpc.drivers.create.useMutation({
@@ -362,7 +362,7 @@ export default function DriverAbstracts() {
   // Driver dialog handlers
   const openAddDriver = () => {
     setEditingDriverId(null);
-    setDriverForm({ name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null, status: "active", notes: "" });
+    setDriverForm({ name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null, status: "active", gasCardPromptId: "", notes: "" });
     setDriverDialogOpen(true);
   };
   const openEditDriver = (d: NonNullable<typeof drivers>[number]) => {
@@ -376,6 +376,7 @@ export default function DriverAbstracts() {
       cdlExpiry: toDateInputValue(d.cdlExpiry),
       cdlDocumentUrl: d.cdlDocumentUrl ?? null,
       status: d.status as "active" | "archived" | "disqualified",
+      gasCardPromptId: d.gasCardPromptId ?? "",
       notes: d.notes ?? "",
     });
     setDriverDialogOpen(true);
@@ -391,6 +392,7 @@ export default function DriverAbstracts() {
       dateOfBirth: driverForm.dateOfBirth ? new Date(driverForm.dateOfBirth).getTime() : undefined,
       cdlExpiry: driverForm.cdlExpiry ? new Date(driverForm.cdlExpiry).getTime() : undefined,
       status: driverForm.status,
+      gasCardPromptId: driverForm.gasCardPromptId.trim() || undefined,
       notes: driverForm.notes || undefined,
     };
     if (editingDriverId) {
@@ -641,6 +643,14 @@ export default function DriverAbstracts() {
             <div>
               <Label>Phone</Label>
               <Input value={driverForm.phone} onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })} />
+            </div>
+            <div>
+              <Label>Gas Card Prompt ID</Label>
+              <Input
+                value={driverForm.gasCardPromptId}
+                onChange={(e) => setDriverForm({ ...driverForm, gasCardPromptId: e.target.value })}
+                placeholder="The ID they enter at the pump"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

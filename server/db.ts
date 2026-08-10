@@ -28,6 +28,10 @@ import {
   tollImports, TollImport, InsertTollImport,
   tollTransactions, TollTransaction, InsertTollTransaction,
   parts, Part, InsertPart,
+  gasImports, GasImport, InsertGasImport,
+  gasUsageRecords, GasUsageRecord, InsertGasUsageRecord,
+  partInvoices, PartInvoice, InsertPartInvoice,
+  partInvoiceDocuments, PartInvoiceDocument, InsertPartInvoiceDocument,
   partUsages, PartUsage, InsertPartUsage,
 } from "../drizzle/schema";
 
@@ -2022,8 +2026,60 @@ export async function getExpirationDashboard(organizationId: number) {
 
 // ============ PARTS INVENTORY ============
 
+// One invoice can have multiple scanned pages and multiple line items —
+// this creates all three together (invoice record, stored document pages,
+// and line-item part rows) as a single logical unit.
+export async function createPartInvoiceWithDocuments(organizationId: number, data: {
+  shopId?: number;
+  invoiceReference?: string;
+  datePurchased: number;
+  printedTotal?: number;
+  documents: { fileUrl: string; fileKey: string; pageNumber: number }[];
+  lineItems: { name: string; category?: string; quantity: number; unitCost: number }[];
+}) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+  if (data.lineItems.length === 0) throw new Error("At least one line item is required");
+
+  return dbConn.transaction(async (tx) => {
+    const invoiceResult = await tx.insert(partInvoices).values({
+      organizationId,
+      shopId: data.shopId,
+      invoiceReference: data.invoiceReference,
+      datePurchased: new Date(data.datePurchased),
+      printedTotal: data.printedTotal != null ? String(data.printedTotal) : undefined,
+    });
+    const invoiceId = invoiceResult[0].insertId;
+
+    if (data.documents.length > 0) {
+      await tx.insert(partInvoiceDocuments).values(data.documents.map(doc => ({
+        organizationId,
+        invoiceId,
+        pageNumber: doc.pageNumber,
+        fileUrl: doc.fileUrl,
+        fileKey: doc.fileKey,
+      })));
+    }
+
+    await tx.insert(parts).values(data.lineItems.map(item => ({
+      organizationId,
+      name: item.name,
+      category: item.category,
+      shopId: data.shopId,
+      invoiceId,
+      quantityPurchased: item.quantity,
+      quantityRemaining: item.quantity,
+      unitCost: String(item.unitCost),
+      totalCost: String(item.quantity * item.unitCost),
+      datePurchased: new Date(data.datePurchased),
+    })));
+
+    return { invoiceId, count: data.lineItems.length };
+  });
+}
+
 export async function createPart(organizationId: number, data: {
-  name: string; category?: string; shopId?: number; invoiceReference?: string;
+  name: string; category?: string; shopId?: number;
   quantityPurchased: number; unitCost: number; datePurchased: number; notes?: string;
 }) {
   const db = await getDb();
@@ -2034,7 +2090,6 @@ export async function createPart(organizationId: number, data: {
     name: data.name,
     category: data.category,
     shopId: data.shopId,
-    invoiceReference: data.invoiceReference,
     quantityPurchased: data.quantityPurchased,
     quantityRemaining: data.quantityPurchased,
     unitCost: String(data.unitCost),
@@ -2045,49 +2100,26 @@ export async function createPart(organizationId: number, data: {
   return { id: result[0].insertId };
 }
 
-// Logs every line item from a single invoice/bill at once, all sharing the
-// same shop, date, and invoice reference — used by the "Log Invoice" flow
-// (whether filled in manually or pre-filled from a scanned photo).
-export async function createPartsBulk(organizationId: number, data: {
-  shopId?: number; invoiceReference?: string; datePurchased: number;
-  lineItems: { name: string; category?: string; quantity: number; unitCost: number }[];
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  if (data.lineItems.length === 0) return { count: 0 };
-
-  await db.insert(parts).values(data.lineItems.map(item => ({
-    organizationId,
-    name: item.name,
-    category: item.category,
-    shopId: data.shopId,
-    invoiceReference: data.invoiceReference,
-    quantityPurchased: item.quantity,
-    quantityRemaining: item.quantity,
-    unitCost: String(item.unitCost),
-    totalCost: String(item.quantity * item.unitCost),
-    datePurchased: new Date(data.datePurchased),
-  })));
-  return { count: data.lineItems.length };
-}
-
 export async function getParts(organizationId: number) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.select().from(parts).where(eq(parts.organizationId, organizationId)).orderBy(desc(parts.datePurchased));
   const shops = await getShops(organizationId);
+  const invoices = await db.select().from(partInvoices).where(eq(partInvoices.organizationId, organizationId));
 
   return rows.map(p => {
     const usedSoFar = p.quantityPurchased - p.quantityRemaining;
     const status: "in_stock" | "partially_used" | "fully_used" =
       usedSoFar === 0 ? "in_stock" : p.quantityRemaining === 0 ? "fully_used" : "partially_used";
+    const invoice = invoices.find(i => i.id === p.invoiceId);
     return {
       id: p.id,
       name: p.name,
       category: p.category,
       shopId: p.shopId,
       shopName: shops.find(s => s.id === p.shopId)?.name ?? null,
-      invoiceReference: p.invoiceReference,
+      invoiceId: p.invoiceId,
+      invoiceReference: invoice?.invoiceReference ?? null,
       quantityPurchased: p.quantityPurchased,
       quantityRemaining: p.quantityRemaining,
       unitCost: parseFloat(p.unitCost),
@@ -2139,6 +2171,70 @@ export async function deletePart(organizationId: number, id: number) {
   }
   await db.delete(parts).where(and(eq(parts.id, id), eq(parts.organizationId, organizationId)));
 }
+
+// ============ PART INVOICES (the "file cabinet" view) ============
+
+export async function getPartInvoices(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const invoices = await db.select().from(partInvoices).where(eq(partInvoices.organizationId, organizationId)).orderBy(desc(partInvoices.datePurchased));
+  const allParts = await db.select().from(parts).where(eq(parts.organizationId, organizationId));
+  const shops = await getShops(organizationId);
+
+  return invoices.map(inv => {
+    const lineItems = allParts.filter(p => p.invoiceId === inv.id);
+    const computedTotal = lineItems.reduce((sum, p) => sum + parseFloat(p.totalCost), 0);
+    const printedTotal = inv.printedTotal != null ? parseFloat(inv.printedTotal) : null;
+    return {
+      id: inv.id,
+      shopId: inv.shopId,
+      shopName: shops.find(s => s.id === inv.shopId)?.name ?? null,
+      invoiceReference: inv.invoiceReference,
+      datePurchased: inv.datePurchased,
+      itemCount: lineItems.length,
+      computedTotal: Math.round(computedTotal * 100) / 100,
+      printedTotal,
+      totalMismatch: printedTotal != null && Math.abs(printedTotal - computedTotal) > 0.01,
+    };
+  });
+}
+
+export async function getPartInvoiceById(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [invoice] = await db.select().from(partInvoices).where(and(eq(partInvoices.id, id), eq(partInvoices.organizationId, organizationId)));
+  if (!invoice) return null;
+
+  const lineItems = await db.select().from(parts).where(and(eq(parts.invoiceId, id), eq(parts.organizationId, organizationId)));
+  const documents = await db.select().from(partInvoiceDocuments).where(and(eq(partInvoiceDocuments.invoiceId, id), eq(partInvoiceDocuments.organizationId, organizationId))).orderBy(partInvoiceDocuments.pageNumber);
+  const shops = await getShops(organizationId);
+
+  const computedTotal = lineItems.reduce((sum, p) => sum + parseFloat(p.totalCost), 0);
+  const printedTotal = invoice.printedTotal != null ? parseFloat(invoice.printedTotal) : null;
+
+  return {
+    id: invoice.id,
+    shopId: invoice.shopId,
+    shopName: shops.find(s => s.id === invoice.shopId)?.name ?? null,
+    invoiceReference: invoice.invoiceReference,
+    datePurchased: invoice.datePurchased,
+    printedTotal,
+    computedTotal: Math.round(computedTotal * 100) / 100,
+    totalMismatch: printedTotal != null && Math.abs(printedTotal - computedTotal) > 0.01,
+    lineItems: lineItems.map(p => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      quantityPurchased: p.quantityPurchased,
+      quantityRemaining: p.quantityRemaining,
+      unitCost: parseFloat(p.unitCost),
+      totalCost: parseFloat(p.totalCost),
+    })),
+    documents: documents.map(d => ({ id: d.id, pageNumber: d.pageNumber, fileUrl: d.fileUrl })),
+  };
+}
+
+// ============ PART USAGE TRACKING ============
 
 export async function getPartUsages(organizationId: number, partId: number) {
   const db = await getDb();
@@ -2206,4 +2302,139 @@ export async function deletePartUsage(organizationId: number, id: number) {
     }
     await tx.delete(partUsages).where(eq(partUsages.id, id));
   });
+}
+
+// ============ GAS AUDIT ============
+
+// Matches each row's Driver Prompt ID against known drivers, without
+// writing anything yet — used to show a preview (matched vs. needs
+// assignment) before the import is actually confirmed.
+export async function previewGasImportRows(organizationId: number, rows: {
+  driverPromptId: string; numberOfTransactions: number; totalAmount: number;
+  avgAmount?: number; highAmount?: number; lowAmount?: number;
+  totalFuelUnits?: number; avgFuelUnitPrice?: number;
+  totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
+}[]) {
+  const allDrivers = await getDrivers(organizationId);
+  return rows.map(row => {
+    const driver = allDrivers.find(d => d.gasCardPromptId && d.gasCardPromptId.trim() === row.driverPromptId.trim());
+    return { ...row, driverId: driver?.id ?? null, driverName: driver?.name ?? null };
+  });
+}
+
+export async function createGasImport(organizationId: number, uploadedByUserId: number, data: {
+  periodLabel: string;
+  fileName?: string;
+  rows: {
+    driverPromptId: string; driverId: number | null; numberOfTransactions: number; totalAmount: number;
+    avgAmount?: number; highAmount?: number; lowAmount?: number;
+    totalFuelUnits?: number; avgFuelUnitPrice?: number;
+    totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
+  }[];
+}) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+  if (data.rows.length === 0) throw new Error("No rows to import");
+
+  return dbConn.transaction(async (tx) => {
+    const importResult = await tx.insert(gasImports).values({
+      organizationId,
+      periodLabel: data.periodLabel,
+      fileName: data.fileName,
+      uploadedByUserId,
+    });
+    const importId = importResult[0].insertId;
+
+    await tx.insert(gasUsageRecords).values(data.rows.map(row => ({
+      organizationId,
+      importId,
+      driverId: row.driverId,
+      driverPromptId: row.driverPromptId,
+      numberOfTransactions: row.numberOfTransactions,
+      totalAmount: String(row.totalAmount),
+      avgAmount: row.avgAmount != null ? String(row.avgAmount) : undefined,
+      highAmount: row.highAmount != null ? String(row.highAmount) : undefined,
+      lowAmount: row.lowAmount != null ? String(row.lowAmount) : undefined,
+      totalFuelUnits: row.totalFuelUnits != null ? String(row.totalFuelUnits) : undefined,
+      avgFuelUnitPrice: row.avgFuelUnitPrice != null ? String(row.avgFuelUnitPrice) : undefined,
+      totalNonFuelAmount: row.totalNonFuelAmount != null ? String(row.totalNonFuelAmount) : undefined,
+      totalTransactionFeeAmount: row.totalTransactionFeeAmount != null ? String(row.totalTransactionFeeAmount) : undefined,
+    })));
+
+    return { importId, count: data.rows.length };
+  });
+}
+
+export async function getGasImports(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const imports = await db.select().from(gasImports).where(eq(gasImports.organizationId, organizationId)).orderBy(desc(gasImports.createdAt));
+  const allRecords = await db.select().from(gasUsageRecords).where(eq(gasUsageRecords.organizationId, organizationId));
+
+  return imports.map(imp => {
+    const records = allRecords.filter(r => r.importId === imp.id);
+    return {
+      id: imp.id,
+      periodLabel: imp.periodLabel,
+      fileName: imp.fileName,
+      createdAt: imp.createdAt,
+      driverCount: records.length,
+      unmatchedCount: records.filter(r => r.driverId == null).length,
+      totalSpend: Math.round(records.reduce((sum, r) => sum + parseFloat(r.totalAmount), 0) * 100) / 100,
+      totalGallons: Math.round(records.reduce((sum, r) => sum + (r.totalFuelUnits ? parseFloat(r.totalFuelUnits) : 0), 0) * 100) / 100,
+    };
+  });
+}
+
+export async function deleteGasImport(organizationId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(gasUsageRecords).where(and(eq(gasUsageRecords.importId, id), eq(gasUsageRecords.organizationId, organizationId)));
+  await db.delete(gasImports).where(and(eq(gasImports.id, id), eq(gasImports.organizationId, organizationId)));
+}
+
+// Every usage record across every import, joined with driver names —
+// the main feed for the Gas page's per-driver breakdown and history.
+export async function getGasUsage(organizationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const records = await db.select().from(gasUsageRecords).where(eq(gasUsageRecords.organizationId, organizationId)).orderBy(desc(gasUsageRecords.createdAt));
+  const imports = await db.select().from(gasImports).where(eq(gasImports.organizationId, organizationId));
+  const allDrivers = await getDrivers(organizationId);
+
+  return records.map(r => {
+    const imp = imports.find(i => i.id === r.importId);
+    const driver = allDrivers.find(d => d.id === r.driverId);
+    return {
+      id: r.id,
+      importId: r.importId,
+      periodLabel: imp?.periodLabel ?? "Unknown",
+      driverId: r.driverId,
+      driverName: driver?.name ?? null,
+      driverPromptId: r.driverPromptId,
+      numberOfTransactions: r.numberOfTransactions,
+      totalAmount: parseFloat(r.totalAmount),
+      avgAmount: r.avgAmount != null ? parseFloat(r.avgAmount) : null,
+      highAmount: r.highAmount != null ? parseFloat(r.highAmount) : null,
+      lowAmount: r.lowAmount != null ? parseFloat(r.lowAmount) : null,
+      totalFuelUnits: r.totalFuelUnits != null ? parseFloat(r.totalFuelUnits) : null,
+      avgFuelUnitPrice: r.avgFuelUnitPrice != null ? parseFloat(r.avgFuelUnitPrice) : null,
+    };
+  });
+}
+
+// Lets an unmatched record be assigned to a driver after the fact — also
+// updates that driver's saved gasCardPromptId so future imports match
+// automatically, and backfills any OTHER unmatched records this
+// organization already has for the same prompt ID.
+export async function assignGasUsageDriver(organizationId: number, recordId: number, driverId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [record] = await db.select().from(gasUsageRecords).where(and(eq(gasUsageRecords.id, recordId), eq(gasUsageRecords.organizationId, organizationId)));
+  if (!record) throw new Error("Record not found");
+
+  await updateDriver(organizationId, driverId, { gasCardPromptId: record.driverPromptId });
+  await db.update(gasUsageRecords).set({ driverId })
+    .where(and(eq(gasUsageRecords.driverPromptId, record.driverPromptId), eq(gasUsageRecords.organizationId, organizationId)));
 }
