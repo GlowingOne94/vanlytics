@@ -1293,6 +1293,19 @@ export const appRouter = router({
         await db.deleteDriverShift(ctx.organizationId, input.id);
         return { success: true } as const;
       }),
+    updateShift: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        clockInAt: z.number().optional(),
+        clockInMileage: z.number().optional(),
+        clockOutAt: z.number().nullable().optional(),
+        clockOutMileage: z.number().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateDriverShift(ctx.organizationId, id, data);
+        return { success: true } as const;
+      }),
   }),
 
   // ============ LIVE MAP ============

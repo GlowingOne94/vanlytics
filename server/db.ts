@@ -1727,6 +1727,50 @@ export async function deleteDriverShift(organizationId: number, id: number) {
   await db.delete(driverShifts).where(and(eq(driverShifts.id, id), eq(driverShifts.organizationId, organizationId)));
 }
 
+// Lets an admin correct a shift after the fact — e.g. a driver forgot to
+// clock out at the actual end of their shift and the recorded time is
+// wrong, or a mileage entry was mistyped. Only touches fields actually
+// passed in.
+export async function updateDriverShift(organizationId: number, id: number, data: {
+  clockInAt?: number; clockInMileage?: number; clockOutAt?: number | null; clockOutMileage?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [existing] = await db.select().from(driverShifts).where(and(eq(driverShifts.id, id), eq(driverShifts.organizationId, organizationId)));
+  if (!existing) throw new Error("Shift not found");
+
+  const newClockInAt = data.clockInAt != null ? new Date(data.clockInAt) : existing.clockInAt;
+  const newClockOutAt = data.clockOutAt === null ? null : data.clockOutAt != null ? new Date(data.clockOutAt) : existing.clockOutAt;
+  const newClockInMileage = data.clockInMileage ?? existing.clockInMileage;
+  const newClockOutMileage = data.clockOutMileage === null ? null : data.clockOutMileage ?? existing.clockOutMileage;
+
+  if (newClockOutAt && newClockOutAt < newClockInAt) {
+    throw new Error("Clock-out time can't be before clock-in time.");
+  }
+  if (newClockOutMileage != null && newClockOutMileage < newClockInMileage) {
+    throw new Error("Ending mileage can't be less than starting mileage.");
+  }
+
+  await db.update(driverShifts).set({
+    clockInAt: newClockInAt,
+    clockInMileage: newClockInMileage,
+    clockOutAt: newClockOutAt,
+    clockOutMileage: newClockOutMileage,
+  }).where(eq(driverShifts.id, id));
+
+  // Keep the vehicle's on-file mileage in sync if this shift's ending
+  // mileage was corrected and it's the most recent shift for that vehicle.
+  if (data.clockOutMileage != null) {
+    const [mostRecent] = await db.select().from(driverShifts)
+      .where(and(eq(driverShifts.organizationId, organizationId), eq(driverShifts.vehicleId, existing.vehicleId)))
+      .orderBy(desc(driverShifts.clockInAt)).limit(1);
+    if (mostRecent?.id === id) {
+      await updateVehicle(organizationId, existing.vehicleId, { mileage: data.clockOutMileage });
+    }
+  }
+}
+
 // ============ DRIVER LOCATION HELPERS ============
 
 export async function upsertDriverLocation(

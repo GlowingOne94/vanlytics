@@ -7,12 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
-import { Gauge, Clock, Trash2, MapPin, ListChecks } from "lucide-react";
+import { Gauge, Clock, Trash2, Pencil, MapPin, ListChecks } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -50,6 +53,7 @@ export default function MileageAnalysis() {
   const [endDate, setEndDate] = useState<number | null>(null);
   const [vehicleFilter, setVehicleFilter] = useState("all");
   const [driverFilter, setDriverFilter] = useState("all");
+  const [editingShift, setEditingShift] = useState<any>(null);
 
   const { data, isLoading } = trpc.mileageAnalysis.get.useQuery({
     startDate: startDate ?? undefined,
@@ -272,6 +276,14 @@ export default function MileageAnalysis() {
                             </div>
                             {isAdmin && (
                             <Button
+                              variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                              onClick={() => setEditingShift(s)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            )}
+                            {isAdmin && (
+                            <Button
                               variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
                               onClick={() => {
                                 if (!window.confirm(`Remove this entry for ${s.driverName} — Van ${s.vanNumber}?`)) return;
@@ -349,6 +361,103 @@ export default function MileageAnalysis() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <EditShiftDialog shift={editingShift} onOpenChange={(open) => { if (!open) setEditingShift(null); }} />
     </div>
+  );
+}
+
+// Converts an epoch-ms timestamp to the value a <input type="datetime-local">
+// expects (local time, "YYYY-MM-DDTHH:mm") and back.
+function toDatetimeLocal(ms: number | null | undefined): string {
+  if (ms == null) return "";
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fromDatetimeLocal(value: string): number {
+  return new Date(value).getTime();
+}
+
+function EditShiftDialog({ shift, onOpenChange }: { shift: any; onOpenChange: (open: boolean) => void }) {
+  const [clockInAt, setClockInAt] = useState("");
+  const [clockInMileage, setClockInMileage] = useState("");
+  const [clockOutAt, setClockOutAt] = useState("");
+  const [clockOutMileage, setClockOutMileage] = useState("");
+  const utils = trpc.useUtils();
+
+  // Sync the form whenever a new shift is opened for editing.
+  if (shift && clockInAt === "" && shift.clockInAt) {
+    setClockInAt(toDatetimeLocal(new Date(shift.clockInAt).getTime()));
+    setClockInMileage(String(shift.clockInMileage));
+    setClockOutAt(shift.clockOutAt ? toDatetimeLocal(new Date(shift.clockOutAt).getTime()) : "");
+    setClockOutMileage(shift.clockOutMileage != null ? String(shift.clockOutMileage) : "");
+  }
+
+  const updateMutation = trpc.mileageAnalysis.updateShift.useMutation({
+    onSuccess: () => {
+      utils.mileageAnalysis.get.invalidate();
+      toast.success("Shift updated");
+      onOpenChange(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleClose = (open: boolean) => {
+    onOpenChange(open);
+    if (!open) { setClockInAt(""); setClockInMileage(""); setClockOutAt(""); setClockOutMileage(""); }
+  };
+
+  const handleSave = () => {
+    if (!shift) return;
+    const inMileage = parseInt(clockInMileage, 10);
+    if (isNaN(inMileage) || inMileage < 0) { toast.error("Enter a valid starting mileage"); return; }
+    const outMileageVal = clockOutMileage.trim() === "" ? null : parseInt(clockOutMileage, 10);
+    if (outMileageVal != null && (isNaN(outMileageVal) || outMileageVal < 0)) { toast.error("Enter a valid ending mileage"); return; }
+
+    updateMutation.mutate({
+      id: shift.id,
+      clockInAt: fromDatetimeLocal(clockInAt),
+      clockInMileage: inMileage,
+      clockOutAt: clockOutAt.trim() === "" ? null : fromDatetimeLocal(clockOutAt),
+      clockOutMileage: outMileageVal,
+    });
+  };
+
+  return (
+    <Dialog open={Boolean(shift)} onOpenChange={handleClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Edit Shift — {shift?.driverName} · Van {shift?.vanNumber}</DialogTitle></DialogHeader>
+        <div className="space-y-3 py-2">
+          <p className="text-xs text-muted-foreground">
+            Use this to fix a shift where the driver forgot to clock out at the right time, or mistyped their mileage.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Clock-In Time</Label>
+              <Input type="datetime-local" value={clockInAt} onChange={(e) => setClockInAt(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Starting Mileage</Label>
+              <Input type="number" min="0" value={clockInMileage} onChange={(e) => setClockInMileage(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Clock-Out Time</Label>
+              <Input type="datetime-local" value={clockOutAt} onChange={(e) => setClockOutAt(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Ending Mileage</Label>
+              <Input type="number" min="0" value={clockOutMileage} onChange={(e) => setClockOutMileage(e.target.value)} placeholder="Not clocked out" />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">Leaving Clock-Out Time blank marks this shift as still open (not clocked out).</p>
+          <Button onClick={handleSave} disabled={updateMutation.isPending} className="w-full">
+            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
