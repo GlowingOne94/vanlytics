@@ -2309,6 +2309,15 @@ export async function deletePartUsage(organizationId: number, id: number) {
 // Matches each row's Driver Prompt ID against known drivers, without
 // writing anything yet — used to show a preview (matched vs. needs
 // assignment) before the import is actually confirmed.
+// Strips leading zeros (and whitespace) so IDs match regardless of whether
+// a spreadsheet parser preserved a leading zero (e.g. saved as "0581") or
+// silently converted it to a number in the process (imported as "581") —
+// a common, easy-to-miss gotcha with numeric-looking ID columns in CSV/XLSX
+// parsing libraries.
+function normalizePromptId(id: string): string {
+  return id.trim().replace(/^0+(?=\d)/, "");
+}
+
 export async function previewGasImportRows(organizationId: number, rows: {
   driverPromptId: string; numberOfTransactions: number; totalAmount: number;
   avgAmount?: number; highAmount?: number; lowAmount?: number;
@@ -2317,7 +2326,7 @@ export async function previewGasImportRows(organizationId: number, rows: {
 }[]) {
   const allDrivers = await getDrivers(organizationId);
   return rows.map(row => {
-    const driver = allDrivers.find(d => d.gasCardPromptId && d.gasCardPromptId.trim() === row.driverPromptId.trim());
+    const driver = allDrivers.find(d => d.gasCardPromptId && normalizePromptId(d.gasCardPromptId) === normalizePromptId(row.driverPromptId));
     return { ...row, driverId: driver?.id ?? null, driverName: driver?.name ?? null };
   });
 }
