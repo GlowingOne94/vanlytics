@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ClipboardCheck, Plus, Pencil, History, Trash2, ExternalLink, Upload, X } from "lucide-react";
+import { ClipboardCheck, Plus, Pencil, History, Trash2, ExternalLink, Upload, X, Search } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
@@ -38,6 +38,7 @@ export default function DotInspections() {
 
   // Log / Edit dialog
   const [dialogTarget, setDialogTarget] = useState<{ vehicleId: number; vanNumber: string } | null>(null);
+  const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ inspectionDate: Date.now(), mileageAtInspection: 0, inspector: "", notes: "", documentUrl: null as string | null });
   const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -122,7 +123,12 @@ export default function DotInspections() {
       else status = "valid";
     }
     return { vehicle: v, latest, status, daysRemaining };
-  }).sort((a, b) => {
+  }).filter(({ vehicle }) =>
+    search.trim() === "" ||
+    vehicle.vanNumber.toLowerCase().includes(search.toLowerCase()) ||
+    (vehicle.vin ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (vehicle.licensePlate ?? "").toLowerCase().includes(search.toLowerCase())
+  ).sort((a, b) => {
     const order: Record<Status, number> = { expired: 0, expiring_soon: 1, never: 2, valid: 3 };
     return order[a.status] - order[b.status];
   });
@@ -182,7 +188,20 @@ export default function DotInspections() {
         <p className="text-muted-foreground text-sm mt-1">Required every 6 months — track history and paperwork per vehicle</p>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by van #, VIN, or plate..."
+          className="pl-9"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       <div className="space-y-2">
+        {rows.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-8">No vehicles match "{search}".</p>
+        )}
         {rows.map(({ vehicle, latest, status, daysRemaining }) => (
           <Card key={vehicle.id}>
             <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap">

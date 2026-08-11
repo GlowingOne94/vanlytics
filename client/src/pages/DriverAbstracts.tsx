@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink, Download, Smartphone } from "lucide-react";
+import { UserCircle, Plus, Pencil, Trash2, HeartPulse, FileSearch, IdCard, FolderOpen, Upload, ExternalLink, Download, Smartphone, Search } from "lucide-react";
 import { DocumentField, fileToBase64 } from "@/components/DocumentField";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { useState, useRef } from "react";
@@ -63,6 +63,7 @@ export default function DriverAbstracts() {
   // Driver create/edit dialog
   const [driverDialogOpen, setDriverDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived" | "disqualified">("active");
+  const [search, setSearch] = useState("");
   const [editingDriverId, setEditingDriverId] = useState<number | null>(null);
   const [driverForm, setDriverForm] = useState({
     name: "", licenseNumber: "", phone: "", ssnLast4: "", dateOfBirth: "", cdlExpiry: "", cdlDocumentUrl: null as string | null,
@@ -308,7 +309,13 @@ export default function DriverAbstracts() {
   }
 
   const now = Date.now();
-  const filteredDrivers = (drivers ?? []).filter(d => statusFilter === "all" || d.status === statusFilter);
+  const filteredDrivers = (drivers ?? []).filter(d =>
+    (statusFilter === "all" || d.status === statusFilter) &&
+    (search.trim() === "" ||
+      d.name.toLowerCase().includes(search.toLowerCase()) ||
+      (d.phone ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (d.licenseNumber ?? "").toLowerCase().includes(search.toLowerCase()))
+  );
   const rows = filteredDrivers.map(d => {
     const medical = latestMedical?.[d.id] ?? null;
     const abstract = latestAbstract?.[d.id] ?? null;
@@ -492,9 +499,19 @@ export default function DriverAbstracts() {
         </div>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name, phone, or license #..."
+          className="pl-9"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">
-          {statusFilter === "all" ? "No drivers added yet." : `No ${statusFilter} drivers.`}
+          {search.trim() !== "" ? `No drivers match "${search}".` : statusFilter === "all" ? "No drivers added yet." : `No ${statusFilter} drivers.`}
         </p>
       ) : (
         <div className="space-y-3">
