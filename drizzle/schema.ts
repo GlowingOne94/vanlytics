@@ -122,6 +122,12 @@ export const vehicles = mysqlTable("vehicles", {
   make: varchar("make", { length: 50 }).default("Ford").notNull(),
   model: varchar("model", { length: 50 }).default("Transit Ambulette").notNull(),
   mileage: int("mileage").default(0).notNull(),
+  // The last mileage reading an actual driver typed in and confirmed as
+  // real (not GPS-estimated) — the anchor point weekly/per-vehicle
+  // verification builds forward from. `mileage` above keeps updating with
+  // estimates in between; this only moves on a genuine verification.
+  mileageAnchor: int("mileageAnchor"),
+  mileageAnchorAt: timestamp("mileageAnchorAt"),
   engine: varchar("engine", { length: 100 }),
   transmission: varchar("transmission", { length: 100 }),
   assignedDriver: varchar("assignedDriver", { length: 100 }),
@@ -593,6 +599,19 @@ export const driverShifts = mysqlTable("driver_shifts", {
   clockOutMileage: int("clockOutMileage"),
   clockOutLatitude: decimal("clockOutLatitude", { precision: 10, scale: 7 }),
   clockOutLongitude: decimal("clockOutLongitude", { precision: 10, scale: 7 }),
+  // Whether clockInMileage was actually typed in by the driver ("yes") or
+  // computed automatically from the vehicle's mileage anchor plus
+  // GPS-estimated distance since then ("no"). Existing rows all default to
+  // "yes" since manual entry was the only option before this feature.
+  mileageVerified: mysqlEnum("mileageVerified", ["yes", "no"]).default("yes").notNull(),
+  // Running GPS-estimated distance accumulated during this specific shift
+  // (haversine distance summed between consecutive location pings),
+  // used to compute clockOutMileage automatically without driver input.
+  estimatedMiles: decimal("estimatedMiles", { precision: 8, scale: 2 }),
+  // Set only when this shift's clock-in was a real verification AND it
+  // differed from what the running estimate had projected at that point —
+  // a record of the correction, without rewriting any past shift's numbers.
+  mileageCorrectionMiles: decimal("mileageCorrectionMiles", { precision: 8, scale: 2 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("driver_shifts_org_idx").on(table.organizationId),

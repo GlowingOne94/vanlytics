@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -332,6 +333,7 @@ export default function MileageAnalysis() {
                         <th className="py-2 pr-3 font-medium">Out GPS</th>
                         <th className="py-2 pr-3 font-medium text-right">Miles</th>
                         <th className="py-2 pr-3 font-medium text-right">Hours</th>
+                        <th className="py-2 pr-3 font-medium">Mileage Source</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -351,6 +353,16 @@ export default function MileageAnalysis() {
                           <td className="py-2 pr-3"><GpsLink latitude={s.clockOutLatitude} longitude={s.clockOutLongitude} /></td>
                           <td className="py-2 pr-3 text-right">{s.milesDriven != null ? s.milesDriven.toLocaleString() : "—"}</td>
                           <td className="py-2 pr-3 text-right">{s.hoursWorked != null ? s.hoursWorked : "—"}</td>
+                          <td className="py-2 pr-3">
+                            <Badge variant="outline" className={s.mileageVerified ? "bg-green-500/15 text-green-600 border-green-500/30" : "bg-blue-500/15 text-blue-500 border-blue-500/30"}>
+                              {s.mileageVerified ? "Verified" : "Estimated"}
+                            </Badge>
+                            {s.mileageCorrectionMiles != null && (
+                              <p className="text-xs text-yellow-500 mt-1">
+                                {s.mileageCorrectionMiles > 0 ? "+" : ""}{s.mileageCorrectionMiles} mi correction from prior estimate
+                              </p>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

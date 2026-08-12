@@ -1771,7 +1771,81 @@ export async function updateDriverShift(organizationId: number, id: number, data
   }
 }
 
+// ============ MILEAGE VERIFICATION & ESTIMATION ============
+
+// Monday-anchored calendar week boundaries for a given date, in the
+// server's local time. The driver app sends its OWN local "week" concept
+// for display purposes elsewhere, but this check is a coarse, server-side
+// gate (has this vehicle been verified at all this week), so exact
+// timezone precision here matters far less than for the timesheet.
+function startOfWeek(d: Date): Date {
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = (day === 0 ? -6 : 1) - day; // shift to Monday
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
+// True if this driver has NOT yet done a verified (real, typed-in) mileage
+// clock-in for this specific vehicle during the current calendar week —
+// covers both "new week" and "just switched to a different vehicle" as a
+// single rule, since either case means no verified reading exists yet for
+// this (driver, vehicle, week) combination.
+export async function isMileageVerificationRequired(organizationId: number, driverId: number, vehicleId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return true;
+  const weekStart = startOfWeek(new Date());
+  const [recentVerified] = await db.select().from(driverShifts)
+    .where(and(
+      eq(driverShifts.organizationId, organizationId),
+      eq(driverShifts.driverId, driverId),
+      eq(driverShifts.vehicleId, vehicleId),
+      eq(driverShifts.mileageVerified, "yes"),
+      gte(driverShifts.clockInAt, weekStart),
+    ))
+    .limit(1);
+  return !recentVerified;
+}
+
+// Haversine distance between two GPS points, in miles.
+function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 3958.8; // Earth radius in miles
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Adds the distance between a shift's last known position and a new ping
+// to that shift's running estimated-miles total. Ignores unrealistic jumps
+// (GPS glitches) rather than letting one bad point wreck the estimate.
+const MAX_REALISTIC_PING_JUMP_MILES = 5; // ~60mph over a 5-minute-ish gap between pings, generously bounded
+
+export async function accumulateShiftDistance(
+  shiftId: number, previousLat: number | null, previousLng: number | null, newLat: number, newLng: number
+) {
+  if (previousLat == null || previousLng == null) return;
+  const distance = haversineMiles(previousLat, previousLng, newLat, newLng);
+  if (distance <= 0 || distance > MAX_REALISTIC_PING_JUMP_MILES) return;
+
+  const db = await getDb();
+  if (!db) return;
+  const [shift] = await db.select().from(driverShifts).where(eq(driverShifts.id, shiftId)).limit(1);
+  if (!shift) return;
+  const current = shift.estimatedMiles != null ? parseFloat(shift.estimatedMiles) : 0;
+  await db.update(driverShifts).set({ estimatedMiles: String(Math.round((current + distance) * 100) / 100) }).where(eq(driverShifts.id, shiftId));
+}
+
 // ============ DRIVER LOCATION HELPERS ============
+
+export async function getDriverLocation(driverId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(driverLocations).where(eq(driverLocations.driverId, driverId)).limit(1);
+  return rows[0];
+}
 
 export async function upsertDriverLocation(
   organizationId: number,
@@ -1894,6 +1968,8 @@ export async function getMileageAnalysis(organizationId: number, opts?: { startD
     hoursWorked: s.clockOutAt
       ? Math.round(((new Date(s.clockOutAt).getTime() - new Date(s.clockInAt).getTime()) / (1000 * 60 * 60)) * 100) / 100
       : null,
+    mileageVerified: s.mileageVerified === "yes",
+    mileageCorrectionMiles: s.mileageCorrectionMiles != null ? parseFloat(s.mileageCorrectionMiles) : null,
   }));
 
   return { byVehicle, byDriver, detail };

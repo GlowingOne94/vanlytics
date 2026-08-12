@@ -185,17 +185,32 @@ export function registerMobileApi(app: Express) {
     });
   });
 
+  // ---- Whether this driver needs to type in a real odometer reading for
+  // this vehicle before clocking in — required once per (driver, vehicle)
+  // per calendar week. Checked by the app once a vehicle is selected, to
+  // decide whether to show the mileage field or just a one-tap button. ----
+  app.get("/api/mobile/verification-status", requireMobileAuth, async (req: Request, res: Response) => {
+    const { driverId, organizationId } = (req as any).mobileAuth as MobileTokenPayload;
+    const parsed = z.object({ vehicleId: z.coerce.number() }).safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Missing vehicleId." });
+      return;
+    }
+    const required = await db.isMileageVerificationRequired(organizationId, driverId, parsed.data.vehicleId);
+    res.json({ required });
+  });
+
   // ---- Clock in: pick a van, enter starting mileage ----
   app.post("/api/mobile/clock-in", requireMobileAuth, async (req: Request, res: Response) => {
     const { driverId, organizationId, deviceId } = (req as any).mobileAuth as MobileTokenPayload;
     const parsed = z.object({
       vehicleId: z.number(),
-      mileage: z.number().min(0),
+      verifiedMileage: z.number().min(0).optional(),
       latitude: z.number().optional(),
       longitude: z.number().optional(),
     }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Select a van and enter your starting mileage." });
+      res.status(400).json({ error: "Select a van to clock in." });
       return;
     }
 
@@ -205,15 +220,53 @@ export function registerMobileApi(app: Express) {
       return;
     }
 
+    const vehicle = await db.getVehicleById(organizationId, parsed.data.vehicleId);
+    if (!vehicle) {
+      res.status(400).json({ error: "That vehicle wasn't found." });
+      return;
+    }
+
+    const verificationRequired = await db.isMileageVerificationRequired(organizationId, driverId, parsed.data.vehicleId);
+    if (verificationRequired && parsed.data.verifiedMileage == null) {
+      res.status(400).json({ error: "Please enter this vehicle's current odometer reading to verify mileage." });
+      return;
+    }
+
+    let clockInMileage: number;
+    let mileageVerified: "yes" | "no";
+    let mileageCorrectionMiles: number | undefined;
+
+    if (parsed.data.verifiedMileage != null) {
+      // A real, typed-in reading — becomes the vehicle's new anchor point.
+      clockInMileage = parsed.data.verifiedMileage;
+      mileageVerified = "yes";
+      const projectedMileage = vehicle.mileage;
+      const diff = clockInMileage - projectedMileage;
+      if (Math.abs(diff) > 0.5) mileageCorrectionMiles = Math.round(diff * 100) / 100;
+      await db.updateVehicle(organizationId, vehicle.id, {
+        mileage: clockInMileage,
+        mileageAnchor: clockInMileage,
+        mileageAnchorAt: new Date(),
+      });
+    } else {
+      // One-tap clock-in — start from wherever the vehicle's running
+      // estimate currently sits.
+      clockInMileage = vehicle.mileage;
+      mileageVerified = "no";
+    }
+
     const shift = await db.createDriverShift({
       organizationId,
       driverId,
       vehicleId: parsed.data.vehicleId,
       deviceId,
       clockInAt: new Date(),
-      clockInMileage: parsed.data.mileage,
+      clockInMileage,
       clockInLatitude: parsed.data.latitude != null ? String(parsed.data.latitude) : undefined,
       clockInLongitude: parsed.data.longitude != null ? String(parsed.data.longitude) : undefined,
+      mileageVerified,
+      estimatedMiles: "0",
+      mileageCorrectionMiles: mileageCorrectionMiles != null ? String(mileageCorrectionMiles) : undefined,
     });
 
     res.json({ success: true, shiftId: shift.id });
@@ -223,12 +276,11 @@ export function registerMobileApi(app: Express) {
   app.post("/api/mobile/clock-out", requireMobileAuth, async (req: Request, res: Response) => {
     const { driverId, organizationId } = (req as any).mobileAuth as MobileTokenPayload;
     const parsed = z.object({
-      mileage: z.number().min(0),
       latitude: z.number().optional(),
       longitude: z.number().optional(),
     }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Enter your ending mileage." });
+      res.status(400).json({ error: "Something went wrong clocking out — please try again." });
       return;
     }
 
@@ -237,17 +289,16 @@ export function registerMobileApi(app: Express) {
       res.status(400).json({ error: "You're not currently clocked in." });
       return;
     }
-    if (parsed.data.mileage < openShift.clockInMileage) {
-      res.status(400).json({ error: `Ending mileage can't be less than your starting mileage (${openShift.clockInMileage}).` });
-      return;
-    }
+
+    const estimatedMiles = openShift.estimatedMiles != null ? parseFloat(openShift.estimatedMiles) : 0;
+    const clockOutMileage = Math.round(openShift.clockInMileage + estimatedMiles);
 
     const clockOutAt = new Date();
-    await db.closeDriverShift(openShift.id, clockOutAt, parsed.data.mileage, parsed.data.latitude, parsed.data.longitude);
-    // Keep the vehicle's on-file mileage in sync with the latest odometer reading.
-    await db.updateVehicle(organizationId, openShift.vehicleId, { mileage: parsed.data.mileage });
+    await db.closeDriverShift(openShift.id, clockOutAt, clockOutMileage, parsed.data.latitude, parsed.data.longitude);
+    // Keep the vehicle's running mileage estimate current for the next shift.
+    await db.updateVehicle(organizationId, openShift.vehicleId, { mileage: clockOutMileage });
 
-    const milesDriven = parsed.data.mileage - openShift.clockInMileage;
+    const milesDriven = clockOutMileage - openShift.clockInMileage;
     const hoursWorked = (clockOutAt.getTime() - new Date(openShift.clockInAt).getTime()) / (1000 * 60 * 60);
 
     res.json({
@@ -272,6 +323,18 @@ export function registerMobileApi(app: Express) {
     if (!openShift) {
       res.status(400).json({ error: "Not currently clocked in — location updates are only accepted during a shift." });
       return;
+    }
+
+    // Accumulate distance from wherever this driver's last known position
+    // was, BEFORE overwriting it with the new ping — this is what powers
+    // automatic mileage estimation on days that don't require verification.
+    const previousLocation = await db.getDriverLocation(driverId);
+    if (previousLocation) {
+      await db.accumulateShiftDistance(
+        openShift.id,
+        parseFloat(previousLocation.latitude), parseFloat(previousLocation.longitude),
+        parsed.data.latitude, parsed.data.longitude
+      );
     }
 
     await db.upsertDriverLocation(organizationId, driverId, openShift.vehicleId, parsed.data.latitude, parsed.data.longitude);
