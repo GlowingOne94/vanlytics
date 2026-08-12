@@ -1752,6 +1752,8 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
           avgFuelUnitPrice: z.number().optional(),
           totalNonFuelAmount: z.number().optional(),
           totalTransactionFeeAmount: z.number().optional(),
+          transactionDate: z.number().optional(),
+          odometer: z.number().optional(),
         })),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -1773,6 +1775,8 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
           avgFuelUnitPrice: z.number().optional(),
           totalNonFuelAmount: z.number().optional(),
           totalTransactionFeeAmount: z.number().optional(),
+          transactionDate: z.number().optional(),
+          odometer: z.number().optional(),
         })),
       }))
       .mutation(async ({ input, ctx }) => {

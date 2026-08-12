@@ -2,6 +2,7 @@ import { useRef, useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { trpc } from "@/lib/trpc";
 import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
+import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ type ParsedRow = {
   avgAmount?: number; highAmount?: number; lowAmount?: number;
   totalFuelUnits?: number; avgFuelUnitPrice?: number;
   totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
+  transactionDate?: number; odometer?: number;
 };
 
 export default function Gas() {
@@ -43,6 +45,8 @@ export default function Gas() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [periodFilter, setPeriodFilter] = useState("all");
   const [driverFilter, setDriverFilter] = useState("all");
+  const [startDate, setStartDate] = useState<number | null>(null);
+  const [endDate, setEndDate] = useState<number | null>(null);
 
   const { data: usage, isLoading } = trpc.gas.usage.useQuery();
   const { data: imports } = trpc.gas.imports.useQuery();
@@ -70,11 +74,23 @@ export default function Gas() {
 
   const filteredUsage = useMemo(() => {
     if (!usage) return [];
-    return usage.filter(u =>
-      (periodFilter === "all" || u.periodLabel === periodFilter) &&
-      (driverFilter === "all" || String(u.driverId) === driverFilter)
-    );
-  }, [usage, periodFilter, driverFilter]);
+    return usage.filter(u => {
+      if (periodFilter !== "all" && u.periodLabel !== periodFilter) return false;
+      if (driverFilter !== "all" && String(u.driverId) !== driverFilter) return false;
+      if (startDate != null || endDate != null) {
+        // Only transaction-level imports have a real date to filter by —
+        // older monthly-summary rows are excluded rather than silently
+        // included, since we can't actually verify they fall in range.
+        if (!u.transactionDate) return false;
+        const t = new Date(u.transactionDate).getTime();
+        if (startDate != null && t < startDate) return false;
+        if (endDate != null && t > endDate) return false;
+      }
+      return true;
+    });
+  }, [usage, periodFilter, driverFilter, startDate, endDate]);
+
+  const hasUndatedRecords = useMemo(() => (usage ?? []).some(u => !u.transactionDate), [usage]);
 
   // Combine records for the same driver across the filtered period(s) — a
   // driver might have multiple import rows if viewing "All Periods".
@@ -155,7 +171,7 @@ export default function Gas() {
         <body>
           <h1>Gas Usage Report</h1>
           <p class="subtitle">
-            Period: ${periodFilter === "all" ? "All Periods" : periodFilter}
+            ${startDate || endDate ? `Dates: ${startDate ? new Date(startDate).toLocaleDateString() : "…"} – ${endDate ? new Date(endDate).toLocaleDateString() : "…"}` : `Period: ${periodFilter === "all" ? "All Periods" : periodFilter}`}
             ${driverFilter !== "all" ? ` · Driver: ${allDrivers?.find(d => String(d.id) === driverFilter)?.name ?? ""}` : ""}
           </p>
           <table>
@@ -202,24 +218,60 @@ export default function Gas() {
         </div>
       )}
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <Label className="text-xs">Period:</Label>
-        <Select value={periodFilter} onValueChange={setPeriodFilter}>
-          <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Periods</SelectItem>
-            {periods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Label className="text-xs">Driver:</Label>
-        <Select value={driverFilter} onValueChange={setDriverFilter}>
-          <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Drivers</SelectItem>
-            {allDrivers?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <Label className="text-xs">From</Label>
+          <Input
+            type="date"
+            className="w-auto"
+            value={toDateInputValue(startDate)}
+            onChange={(e) => setStartDate(e.target.value ? fromDateInputValue(e.target.value) : null)}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">To</Label>
+          <Input
+            type="date"
+            className="w-auto"
+            value={toDateInputValue(endDate)}
+            onChange={(e) => {
+              if (!e.target.value) { setEndDate(null); return; }
+              const endOfDay = fromDateInputValue(e.target.value) + (24 * 60 * 60 * 1000 - 1);
+              setEndDate(endOfDay);
+            }}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Period:</Label>
+          <Select value={periodFilter} onValueChange={setPeriodFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Periods</SelectItem>
+              {periods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Driver:</Label>
+          <Select value={driverFilter} onValueChange={setDriverFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Drivers</SelectItem>
+              {allDrivers?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        {(startDate || endDate) && (
+          <Button variant="ghost" size="sm" onClick={() => { setStartDate(null); setEndDate(null); }}>
+            Clear Dates
+          </Button>
+        )}
       </div>
+      {(startDate || endDate) && hasUndatedRecords && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          Note: older imports without per-transaction dates aren't included when a date range is set — only imports from a transaction-level report (with real dates) can be filtered this way.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card><CardContent className="p-3 flex items-center gap-3">
@@ -358,40 +410,81 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
     reader.onload = (e) => {
       try {
         const buffer = e.target?.result;
-        const workbook = XLSX.read(buffer, { type: "array" });
+        const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
         if (json.length === 0) { toast.error("No rows found in that file"); return; }
 
         const headers = Object.keys(json[0]);
         const promptIdCol = findColumn(headers, ["Driver Prompt ID", "Prompt ID", "Driver ID"]);
-        const txnCol = findColumn(headers, ["Number of Transactions", "Transactions"]);
-        const totalCol = findColumn(headers, ["Total Amount"]);
-        const avgCol = findColumn(headers, ["Average Amount"]);
-        const highCol = findColumn(headers, ["High Amount"]);
-        const lowCol = findColumn(headers, ["Low Amount"]);
-        const fuelUnitsCol = findColumn(headers, ["Total Fuel Units"]);
-        const avgFuelPriceCol = findColumn(headers, ["Average Fuel Unit Price"]);
-        const nonFuelCol = findColumn(headers, ["Total Non-Fuel Amount"]);
-        const feeCol = findColumn(headers, ["Total Transaction Fee Amount"]);
+        const dateCol = findColumn(headers, ["Transaction Date"]);
 
-        if (!promptIdCol || !txnCol || !totalCol) {
-          toast.error("Couldn't find Driver Prompt ID / Number of Transactions / Total Amount columns — check this is the \"Summary by Driver Prompt ID\" report.");
+        if (!promptIdCol) {
+          toast.error("Couldn't find a Driver Prompt ID column in that file.");
           return;
         }
 
-        const rows: ParsedRow[] = json.map(row => ({
-          driverPromptId: String(row[promptIdCol]).trim(),
-          numberOfTransactions: Number(row[txnCol]) || 0,
-          totalAmount: Number(row[totalCol]) || 0,
-          avgAmount: avgCol ? Number(row[avgCol]) || undefined : undefined,
-          highAmount: highCol ? Number(row[highCol]) || undefined : undefined,
-          lowAmount: lowCol ? Number(row[lowCol]) || undefined : undefined,
-          totalFuelUnits: fuelUnitsCol ? Number(row[fuelUnitsCol]) || undefined : undefined,
-          avgFuelUnitPrice: avgFuelPriceCol ? Number(row[avgFuelPriceCol]) || undefined : undefined,
-          totalNonFuelAmount: nonFuelCol ? Number(row[nonFuelCol]) || undefined : undefined,
-          totalTransactionFeeAmount: feeCol ? Number(row[feeCol]) || undefined : undefined,
-        })).filter(r => r.driverPromptId);
+        let rows: ParsedRow[];
+
+        if (dateCol) {
+          // Transaction-level report — one row per fill-up, with a real
+          // date/time and (usually) an odometer reading.
+          const timeCol = findColumn(headers, ["Transaction Time"]);
+          const costCol = findColumn(headers, ["Total Fuel Cost", "Total Amount"]);
+          const unitsCol = findColumn(headers, ["Units"]);
+          const unitCostCol = findColumn(headers, ["Unit Cost"]);
+          const odometerCol = findColumn(headers, ["Current Odometer", "Odometer"]);
+
+          if (!costCol) {
+            toast.error("Found dates but couldn't find a Total Fuel Cost / Total Amount column.");
+            return;
+          }
+
+          rows = json.map(row => {
+            const dateVal = row[dateCol];
+            const timeVal = timeCol ? row[timeCol] : "";
+            const parsedDate = dateVal instanceof Date ? dateVal : new Date(`${dateVal} ${timeVal}`.trim());
+            const odometerRaw = odometerCol ? Number(row[odometerCol]) : NaN;
+            return {
+              driverPromptId: String(row[promptIdCol]).trim(),
+              numberOfTransactions: 1,
+              totalAmount: Number(row[costCol]) || 0,
+              totalFuelUnits: unitsCol ? Number(row[unitsCol]) || undefined : undefined,
+              avgFuelUnitPrice: unitCostCol ? Number(row[unitCostCol]) || undefined : undefined,
+              transactionDate: !isNaN(parsedDate.getTime()) ? parsedDate.getTime() : undefined,
+              odometer: !isNaN(odometerRaw) && odometerRaw > 0 ? odometerRaw : undefined,
+            };
+          }).filter(r => r.driverPromptId);
+        } else {
+          // Monthly summary report — one row per driver for the whole period.
+          const txnCol = findColumn(headers, ["Number of Transactions", "Transactions"]);
+          const totalCol = findColumn(headers, ["Total Amount"]);
+          const avgCol = findColumn(headers, ["Average Amount"]);
+          const highCol = findColumn(headers, ["High Amount"]);
+          const lowCol = findColumn(headers, ["Low Amount"]);
+          const fuelUnitsCol = findColumn(headers, ["Total Fuel Units"]);
+          const avgFuelPriceCol = findColumn(headers, ["Average Fuel Unit Price"]);
+          const nonFuelCol = findColumn(headers, ["Total Non-Fuel Amount"]);
+          const feeCol = findColumn(headers, ["Total Transaction Fee Amount"]);
+
+          if (!txnCol || !totalCol) {
+            toast.error("Couldn't find Number of Transactions / Total Amount columns — check this is the \"Summary by Driver Prompt ID\" report.");
+            return;
+          }
+
+          rows = json.map(row => ({
+            driverPromptId: String(row[promptIdCol]).trim(),
+            numberOfTransactions: Number(row[txnCol]) || 0,
+            totalAmount: Number(row[totalCol]) || 0,
+            avgAmount: avgCol ? Number(row[avgCol]) || undefined : undefined,
+            highAmount: highCol ? Number(row[highCol]) || undefined : undefined,
+            lowAmount: lowCol ? Number(row[lowCol]) || undefined : undefined,
+            totalFuelUnits: fuelUnitsCol ? Number(row[fuelUnitsCol]) || undefined : undefined,
+            avgFuelUnitPrice: avgFuelPriceCol ? Number(row[avgFuelPriceCol]) || undefined : undefined,
+            totalNonFuelAmount: nonFuelCol ? Number(row[nonFuelCol]) || undefined : undefined,
+            totalTransactionFeeAmount: feeCol ? Number(row[feeCol]) || undefined : undefined,
+          })).filter(r => r.driverPromptId);
+        }
 
         previewMutation.mutate({ rows });
       } catch {
@@ -418,6 +511,8 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       avgFuelUnitPrice: r.avgFuelUnitPrice,
       totalNonFuelAmount: r.totalNonFuelAmount,
       totalTransactionFeeAmount: r.totalTransactionFeeAmount,
+      transactionDate: r.transactionDate,
+      odometer: r.odometer,
     }));
     confirmMutation.mutate({ periodLabel: periodLabel.trim(), fileName, rows });
   };

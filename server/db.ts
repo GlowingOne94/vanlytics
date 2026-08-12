@@ -2367,6 +2367,7 @@ export async function previewGasImportRows(organizationId: number, rows: {
   avgAmount?: number; highAmount?: number; lowAmount?: number;
   totalFuelUnits?: number; avgFuelUnitPrice?: number;
   totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
+  transactionDate?: number; odometer?: number;
 }[]) {
   const allDrivers = await getDrivers(organizationId);
   return rows.map(row => {
@@ -2383,6 +2384,7 @@ export async function createGasImport(organizationId: number, uploadedByUserId: 
     avgAmount?: number; highAmount?: number; lowAmount?: number;
     totalFuelUnits?: number; avgFuelUnitPrice?: number;
     totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
+    transactionDate?: number; odometer?: number;
   }[];
 }) {
   const dbConn = await getDb();
@@ -2403,6 +2405,8 @@ export async function createGasImport(organizationId: number, uploadedByUserId: 
       importId,
       driverId: row.driverId,
       driverPromptId: row.driverPromptId,
+      transactionDate: row.transactionDate != null ? new Date(row.transactionDate) : undefined,
+      odometer: row.odometer,
       numberOfTransactions: row.numberOfTransactions,
       totalAmount: String(row.totalAmount),
       avgAmount: row.avgAmount != null ? String(row.avgAmount) : undefined,
@@ -2465,6 +2469,8 @@ export async function getGasUsage(organizationId: number) {
       driverId: r.driverId,
       driverName: driver?.name ?? null,
       driverPromptId: r.driverPromptId,
+      transactionDate: r.transactionDate,
+      odometer: r.odometer,
       numberOfTransactions: r.numberOfTransactions,
       totalAmount: parseFloat(r.totalAmount),
       avgAmount: r.avgAmount != null ? parseFloat(r.avgAmount) : null,

@@ -793,6 +793,11 @@ export const gasUsageRecords = mysqlTable("gas_usage_records", {
   importId: int("importId").notNull(),
   driverId: int("driverId"),
   driverPromptId: varchar("driverPromptId", { length: 20 }).notNull(),
+  // Set only for transaction-level imports (one row per fill-up) — null
+  // for older monthly-summary imports (one row per driver per month),
+  // which have no date to filter by.
+  transactionDate: timestamp("transactionDate"),
+  odometer: int("odometer"),
   numberOfTransactions: int("numberOfTransactions").notNull(),
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
   avgAmount: decimal("avgAmount", { precision: 10, scale: 2 }),
