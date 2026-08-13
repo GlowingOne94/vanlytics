@@ -203,6 +203,9 @@ export default function Tolls() {
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [vehicleFilter, setVehicleFilter] = useState("all");
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+
+  const duplicateCount = useMemo(() => (transactions ?? []).filter(t => t.possibleDuplicate).length, [transactions]);
 
   const vanOptions = useMemo(() => {
     const vans = new Set((transactions ?? []).map(t => t.vanNumber).filter((v): v is string => Boolean(v)));
@@ -211,6 +214,10 @@ export default function Tolls() {
 
   const displayedTransactions = useMemo(() => {
     let rows = transactions ?? [];
+
+    if (duplicatesOnly) {
+      rows = rows.filter(t => t.possibleDuplicate);
+    }
 
     if (vehicleFilter === "unmatched") {
       rows = rows.filter(t => !t.vanNumber);
@@ -234,7 +241,7 @@ export default function Tolls() {
       const diff = new Date(a.transactionAt).getTime() - new Date(b.transactionAt).getTime();
       return sortOrder === "asc" ? diff : -diff;
     });
-  }, [transactions, search, sortOrder, vehicleFilter]);
+  }, [transactions, search, sortOrder, vehicleFilter, duplicatesOnly]);
 
   const allSelected = displayedTransactions.length > 0 && displayedTransactions.every(t => selectedIds.has(t.id));
   const toggleSelectAll = () => {
@@ -303,6 +310,19 @@ export default function Tolls() {
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Transactions</p><p className="text-xl font-bold">{summary.count}</p></CardContent></Card>
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Unmatched</p><p className="text-xl font-bold">{summary.unmatched}</p></CardContent></Card>
       </div>
+
+      {duplicateCount > 0 && (
+        <button
+          className="w-full flex items-center gap-2 text-sm bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 text-yellow-600 text-left hover:bg-yellow-500/15"
+          onClick={() => setDuplicatesOnly(!duplicatesOnly)}
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            {duplicateCount} transaction{duplicateCount === 1 ? "" : "s"} look{duplicateCount === 1 ? "s" : ""} like a possible duplicate charge — same vehicle, same toll, same amount, within 30 minutes of each other.
+          </span>
+          <span className="ml-auto font-medium whitespace-nowrap">{duplicatesOnly ? "Show All" : "Review"}</span>
+        </button>
+      )}
 
       <div className="flex items-end gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
@@ -378,7 +398,7 @@ export default function Tolls() {
           )}
           <div className="space-y-2">
           {displayedTransactions.map(t => (
-            <Card key={t.id}>
+            <Card key={t.id} className={t.possibleDuplicate ? "border-yellow-500/50" : ""}>
               <CardContent className="p-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
                   {isAdmin && <Checkbox checked={selectedIds.has(t.id)} onCheckedChange={() => toggleSelected(t.id)} />}
@@ -387,6 +407,11 @@ export default function Tolls() {
                   ) : (
                     <Badge variant="outline" className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30">
                       <AlertTriangle className="h-3 w-3 mr-1" /> Unmatched
+                    </Badge>
+                  )}
+                  {t.possibleDuplicate && (
+                    <Badge variant="outline" className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30">
+                      <AlertTriangle className="h-3 w-3 mr-1" /> Possible Duplicate
                     </Badge>
                   )}
                   <div>

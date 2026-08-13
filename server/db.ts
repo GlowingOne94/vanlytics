@@ -2030,6 +2030,35 @@ export async function getTollTransactions(organizationId: number, opts?: { start
   const rows = await db.select().from(tollTransactions).where(and(...conditions)).orderBy(desc(tollTransactions.transactionAt));
   const vehicles = await getVehicles(organizationId);
 
+  // Flag likely double-billing — same vehicle, same toll location, same
+  // amount, and close enough in time that it's almost certainly the same
+  // physical crossing charged twice rather than two separate trips. 30
+  // minutes is generous enough to catch a slow-to-post duplicate without
+  // flagging someone who genuinely passed the same plaza twice same day
+  // (e.g. there and back), which would typically be hours apart.
+  const DUPLICATE_WINDOW_MS = 30 * 60 * 1000;
+  const duplicateIds = new Set<number>();
+  const duplicateGroupByTxnId = new Map<number, number>();
+  let nextGroupId = 1;
+
+  for (let i = 0; i < rows.length; i++) {
+    for (let j = i + 1; j < rows.length; j++) {
+      const a = rows[i], b = rows[j];
+      if (a.vehicleId == null || a.vehicleId !== b.vehicleId) continue;
+      if (!a.exitPlaza || a.exitPlaza !== b.exitPlaza) continue;
+      if (a.amount !== b.amount) continue;
+      const gapMs = Math.abs(new Date(a.transactionAt).getTime() - new Date(b.transactionAt).getTime());
+      if (gapMs > DUPLICATE_WINDOW_MS) continue;
+
+      duplicateIds.add(a.id);
+      duplicateIds.add(b.id);
+      const existingGroup = duplicateGroupByTxnId.get(a.id) ?? duplicateGroupByTxnId.get(b.id);
+      const groupId = existingGroup ?? nextGroupId++;
+      duplicateGroupByTxnId.set(a.id, groupId);
+      duplicateGroupByTxnId.set(b.id, groupId);
+    }
+  }
+
   return rows.map(r => ({
     id: r.id,
     vanNumber: vehicles.find(v => v.id === r.vehicleId)?.vanNumber ?? null,
@@ -2042,6 +2071,8 @@ export async function getTollTransactions(organizationId: number, opts?: { start
     agency: r.agency,
     amount: parseFloat(r.amount),
     notes: r.notes,
+    possibleDuplicate: duplicateIds.has(r.id),
+    duplicateGroupId: duplicateGroupByTxnId.get(r.id) ?? null,
   }));
 }
 
