@@ -2438,39 +2438,89 @@ function normalizePromptId(id: string): string {
   return id.trim().replace(/^0+(?=\d)/, "");
 }
 
-export async function previewGasImportRows(organizationId: number, rows: {
+type GasImportRowInput = {
   driverPromptId: string; numberOfTransactions: number; totalAmount: number;
   avgAmount?: number; highAmount?: number; lowAmount?: number;
   totalFuelUnits?: number; avgFuelUnitPrice?: number;
   totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
-  transactionDate?: number; odometer?: number;
-}[]) {
+  transactionDate?: number; transactionId?: string; cardNumberMasked?: string;
+  driverFirstName?: string; driverLastName?: string;
+  vehicleAssetId?: string; vin?: string;
+  currentOdometer?: number; previousOdometer?: number; distanceDriven?: number;
+  merchantName?: string; merchantAddress?: string; merchantCity?: string; merchantState?: string;
+};
+
+export async function previewGasImportRows(organizationId: number, rows: GasImportRowInput[]) {
   const allDrivers = await getDrivers(organizationId);
+  const allVehicles = await getVehicles(organizationId);
+
   return rows.map(row => {
     const driver = allDrivers.find(d => d.gasCardPromptId && normalizePromptId(d.gasCardPromptId) === normalizePromptId(row.driverPromptId));
-    return { ...row, driverId: driver?.id ?? null, driverName: driver?.name ?? null };
+    // VIN is far more reliable than card number for vehicle attribution —
+    // it isn't affected by a card getting moved between vans.
+    const vehicle = row.vin ? allVehicles.find(v => v.vin && v.vin.trim().toUpperCase() === row.vin!.trim().toUpperCase()) : undefined;
+
+    // Flag odometer readings that don't make physical sense — current
+    // less than previous, or a huge jump — rather than silently trusting
+    // whatever the source file says. Found exactly this kind of error
+    // (a missing digit) in real data while building this.
+    let odometerFlag: string | null = null;
+    if (row.currentOdometer != null && row.previousOdometer != null) {
+      if (row.currentOdometer < row.previousOdometer) {
+        odometerFlag = "Current odometer is lower than previous — likely a data entry error in the source file.";
+      } else if (row.currentOdometer - row.previousOdometer > 1000) {
+        odometerFlag = `${row.currentOdometer - row.previousOdometer} miles since the last fill-up seems unusually high — worth double-checking.`;
+      }
+    }
+
+    return {
+      ...row,
+      driverId: driver?.id ?? null,
+      driverName: driver?.name ?? null,
+      vehicleId: vehicle?.id ?? null,
+      vehicleVanNumber: vehicle?.vanNumber ?? null,
+      odometerFlag,
+    };
   });
 }
 
+// Turns a real date range into a clean display label — "July 2026" when it
+// spans a full calendar month exactly, otherwise "Jul 7 – Jul 13, 2026".
+function formatPeriodLabel(start: Date, end: Date): string {
+  const isFullMonth =
+    start.getDate() === 1 &&
+    end.getMonth() === start.getMonth() &&
+    end.getFullYear() === start.getFullYear() &&
+    end.getDate() === new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+
+  if (isFullMonth) {
+    return start.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }
+  const startStr = start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const endStr = end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${startStr} – ${endStr}`;
+}
+
 export async function createGasImport(organizationId: number, uploadedByUserId: number, data: {
-  periodLabel: string;
+  periodStart: number;
+  periodEnd: number;
   fileName?: string;
-  rows: {
-    driverPromptId: string; driverId: number | null; numberOfTransactions: number; totalAmount: number;
-    avgAmount?: number; highAmount?: number; lowAmount?: number;
-    totalFuelUnits?: number; avgFuelUnitPrice?: number;
-    totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
-    transactionDate?: number; odometer?: number;
-  }[];
+  rows: (GasImportRowInput & { driverId: number | null; vehicleId: number | null })[];
 }) {
   const dbConn = await getDb();
   if (!dbConn) throw new Error("Database not available");
   if (data.rows.length === 0) throw new Error("No rows to import");
 
+  const periodStart = new Date(data.periodStart);
+  const periodEnd = new Date(data.periodEnd);
+  const periodLabel = formatPeriodLabel(periodStart, periodEnd);
+
   return dbConn.transaction(async (tx) => {
     const importResult = await tx.insert(gasImports).values({
       organizationId,
-      periodLabel: data.periodLabel,
+      periodLabel,
+      periodStart,
+      periodEnd,
       fileName: data.fileName,
       uploadedByUserId,
     });
@@ -2481,8 +2531,21 @@ export async function createGasImport(organizationId: number, uploadedByUserId: 
       importId,
       driverId: row.driverId,
       driverPromptId: row.driverPromptId,
+      driverFirstName: row.driverFirstName,
+      driverLastName: row.driverLastName,
       transactionDate: row.transactionDate != null ? new Date(row.transactionDate) : undefined,
-      odometer: row.odometer,
+      transactionId: row.transactionId,
+      cardNumberMasked: row.cardNumberMasked,
+      vehicleId: row.vehicleId,
+      vehicleAssetId: row.vehicleAssetId,
+      vin: row.vin,
+      currentOdometer: row.currentOdometer,
+      previousOdometer: row.previousOdometer,
+      distanceDriven: row.distanceDriven,
+      merchantName: row.merchantName,
+      merchantAddress: row.merchantAddress,
+      merchantCity: row.merchantCity,
+      merchantState: row.merchantState,
       numberOfTransactions: row.numberOfTransactions,
       totalAmount: String(row.totalAmount),
       avgAmount: row.avgAmount != null ? String(row.avgAmount) : undefined,
@@ -2498,25 +2561,54 @@ export async function createGasImport(organizationId: number, uploadedByUserId: 
   });
 }
 
+// Groups imports by driver rather than returning a flat chronological
+// list — each import can appear under more than one driver if it happens
+// to contain multiple people's transactions, but the common case (one
+// driver imported at a time) collapses into a clean per-driver history.
 export async function getGasImports(organizationId: number) {
   const db = await getDb();
   if (!db) return [];
-  const imports = await db.select().from(gasImports).where(eq(gasImports.organizationId, organizationId)).orderBy(desc(gasImports.createdAt));
+  const imports = await db.select().from(gasImports).where(eq(gasImports.organizationId, organizationId)).orderBy(desc(gasImports.periodStart), desc(gasImports.createdAt));
   const allRecords = await db.select().from(gasUsageRecords).where(eq(gasUsageRecords.organizationId, organizationId));
+  const allDrivers = await getDrivers(organizationId);
 
-  return imports.map(imp => {
+  const importSummaries = imports.map(imp => {
     const records = allRecords.filter(r => r.importId === imp.id);
+    const driverIds = Array.from(new Set(records.map(r => r.driverId).filter((id): id is number => id != null)));
+    const unmatchedPromptIds = Array.from(new Set(records.filter(r => r.driverId == null).map(r => r.driverPromptId)));
     return {
       id: imp.id,
       periodLabel: imp.periodLabel,
+      periodStart: imp.periodStart,
+      periodEnd: imp.periodEnd,
       fileName: imp.fileName,
       createdAt: imp.createdAt,
+      driverIds,
+      unmatchedPromptIds,
       driverCount: records.length,
       unmatchedCount: records.filter(r => r.driverId == null).length,
       totalSpend: Math.round(records.reduce((sum, r) => sum + parseFloat(r.totalAmount), 0) * 100) / 100,
       totalGallons: Math.round(records.reduce((sum, r) => sum + (r.totalFuelUnits ? parseFloat(r.totalFuelUnits) : 0), 0) * 100) / 100,
     };
   });
+
+  const groups = new Map<string, { key: string; driverId: number | null; driverName: string; imports: typeof importSummaries }>();
+  for (const imp of importSummaries) {
+    const keys = imp.driverIds.length > 0 ? imp.driverIds.map(id => `driver-${id}`) : imp.unmatchedPromptIds.map(id => `unmatched-${id}`);
+    if (keys.length === 0) keys.push("unmatched-none");
+    for (const key of keys) {
+      if (!groups.has(key)) {
+        const driverId = key.startsWith("driver-") ? parseInt(key.slice(7), 10) : null;
+        const driverName = driverId != null
+          ? (allDrivers.find(d => d.id === driverId)?.name ?? "Unknown Driver")
+          : `Unassigned (Prompt ID ${key.replace("unmatched-", "")})`;
+        groups.set(key, { key, driverId, driverName, imports: [] });
+      }
+      groups.get(key)!.imports.push(imp);
+    }
+  }
+
+  return Array.from(groups.values()).sort((a, b) => a.driverName.localeCompare(b.driverName));
 }
 
 export async function deleteGasImport(organizationId: number, id: number) {
@@ -2526,27 +2618,41 @@ export async function deleteGasImport(organizationId: number, id: number) {
   await db.delete(gasImports).where(and(eq(gasImports.id, id), eq(gasImports.organizationId, organizationId)));
 }
 
-// Every usage record across every import, joined with driver names —
-// the main feed for the Gas page's per-driver breakdown and history.
+// Every usage record across every import, joined with driver and vehicle
+// names — the main feed for the Gas page's breakdown and history.
 export async function getGasUsage(organizationId: number) {
   const db = await getDb();
   if (!db) return [];
   const records = await db.select().from(gasUsageRecords).where(eq(gasUsageRecords.organizationId, organizationId)).orderBy(desc(gasUsageRecords.createdAt));
   const imports = await db.select().from(gasImports).where(eq(gasImports.organizationId, organizationId));
   const allDrivers = await getDrivers(organizationId);
+  const allVehicles = await getVehicles(organizationId);
 
   return records.map(r => {
     const imp = imports.find(i => i.id === r.importId);
     const driver = allDrivers.find(d => d.id === r.driverId);
+    const vehicle = allVehicles.find(v => v.id === r.vehicleId);
     return {
       id: r.id,
       importId: r.importId,
       periodLabel: imp?.periodLabel ?? "Unknown",
       driverId: r.driverId,
-      driverName: driver?.name ?? null,
+      driverName: driver?.name ?? (r.driverFirstName || r.driverLastName ? `${r.driverFirstName ?? ""} ${r.driverLastName ?? ""}`.trim() : null),
       driverPromptId: r.driverPromptId,
+      vehicleId: r.vehicleId,
+      vehicleVanNumber: vehicle?.vanNumber ?? null,
+      vehicleAssetId: r.vehicleAssetId,
+      vin: r.vin,
       transactionDate: r.transactionDate,
-      odometer: r.odometer,
+      transactionId: r.transactionId,
+      cardNumberMasked: r.cardNumberMasked,
+      currentOdometer: r.currentOdometer,
+      previousOdometer: r.previousOdometer,
+      distanceDriven: r.distanceDriven,
+      merchantName: r.merchantName,
+      merchantAddress: r.merchantAddress,
+      merchantCity: r.merchantCity,
+      merchantState: r.merchantState,
       numberOfTransactions: r.numberOfTransactions,
       totalAmount: parseFloat(r.totalAmount),
       avgAmount: r.avgAmount != null ? parseFloat(r.avgAmount) : null,

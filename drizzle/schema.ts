@@ -792,7 +792,13 @@ export type InsertPartUsage = typeof partUsages.$inferInsert;
 export const gasImports = mysqlTable("gas_imports", {
   id: int("id").autoincrement().primaryKey(),
   organizationId: int("organizationId").notNull(),
+  // Auto-generated display string (e.g. "July 2026" or "Jul 7 – Jul 13,
+  // 2026"), derived from periodStart/periodEnd — kept as a real column so
+  // existing rows imported before this feature still display something
+  // sensible, but no longer free-typed for new imports.
   periodLabel: varchar("periodLabel", { length: 50 }).notNull(),
+  periodStart: timestamp("periodStart"),
+  periodEnd: timestamp("periodEnd"),
   fileName: varchar("fileName", { length: 255 }),
   uploadedByUserId: int("uploadedByUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -812,11 +818,30 @@ export const gasUsageRecords = mysqlTable("gas_usage_records", {
   importId: int("importId").notNull(),
   driverId: int("driverId"),
   driverPromptId: varchar("driverPromptId", { length: 20 }).notNull(),
+  // Raw driver name as printed on the transaction — kept alongside the
+  // matched driverId for reference even when a match fails.
+  driverFirstName: varchar("driverFirstName", { length: 100 }),
+  driverLastName: varchar("driverLastName", { length: 100 }),
   // Set only for transaction-level imports (one row per fill-up) — null
   // for older monthly-summary imports (one row per driver per month),
   // which have no date to filter by.
   transactionDate: timestamp("transactionDate"),
-  odometer: int("odometer"),
+  transactionId: varchar("transactionId", { length: 50 }),
+  cardNumberMasked: varchar("cardNumberMasked", { length: 20 }),
+  // VIN is the reliable link to a specific vehicle in Fleet — unlike card
+  // number, it isn't affected by cards moving between vans. vehicleId is
+  // set when that match succeeds; vehicleAssetId and vin are kept raw
+  // either way, for reference and for re-matching if a VIN gets corrected.
+  vehicleId: int("vehicleId"),
+  vehicleAssetId: varchar("vehicleAssetId", { length: 50 }),
+  vin: varchar("vin", { length: 17 }),
+  currentOdometer: int("currentOdometer"),
+  previousOdometer: int("previousOdometer"),
+  distanceDriven: int("distanceDriven"),
+  merchantName: varchar("merchantName", { length: 150 }),
+  merchantAddress: varchar("merchantAddress", { length: 200 }),
+  merchantCity: varchar("merchantCity", { length: 100 }),
+  merchantState: varchar("merchantState", { length: 20 }),
   numberOfTransactions: int("numberOfTransactions").notNull(),
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }).notNull(),
   avgAmount: decimal("avgAmount", { precision: 10, scale: 2 }),

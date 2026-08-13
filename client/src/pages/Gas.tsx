@@ -16,7 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Fuel, Upload, Trash2, AlertTriangle, CheckCircle2, DollarSign, Droplet, Users, FileSpreadsheet, FileText,
+  Fuel, Upload, Trash2, AlertTriangle, CheckCircle2, DollarSign, Droplet, Users, FileSpreadsheet, FileText, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,12 +32,45 @@ function findColumn(headers: string[], candidates: string[]): string | null {
   return null;
 }
 
+// Merges a separate date cell and time cell into one correct timestamp.
+// Needed because XLSX's cellDates option converts BOTH date-looking and
+// time-looking cells into JS Date objects — so a bare "if it's already a
+// Date, just use it" check silently throws away the time-of-day and
+// defaults everything to midnight, which is exactly the bug this fixes.
+// Time is expected as 24-hour/military format (e.g. "09:32:05" or "18:04").
+function combineDateAndTime(dateVal: unknown, timeVal: unknown): Date {
+  const datePart = dateVal instanceof Date ? dateVal : new Date(String(dateVal));
+  if (!timeVal || (typeof timeVal === "string" && timeVal.trim() === "")) return datePart;
+
+  let hours = 0, minutes = 0, seconds = 0;
+  if (timeVal instanceof Date) {
+    hours = timeVal.getHours();
+    minutes = timeVal.getMinutes();
+    seconds = timeVal.getSeconds();
+  } else {
+    const match = String(timeVal).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (match) {
+      hours = parseInt(match[1], 10);
+      minutes = parseInt(match[2], 10);
+      seconds = match[3] ? parseInt(match[3], 10) : 0;
+    }
+  }
+
+  const combined = new Date(datePart);
+  combined.setHours(hours, minutes, seconds, 0);
+  return combined;
+}
+
 type ParsedRow = {
   driverPromptId: string; numberOfTransactions: number; totalAmount: number;
   avgAmount?: number; highAmount?: number; lowAmount?: number;
   totalFuelUnits?: number; avgFuelUnitPrice?: number;
   totalNonFuelAmount?: number; totalTransactionFeeAmount?: number;
-  transactionDate?: number; odometer?: number;
+  transactionDate?: number; transactionId?: string; cardNumberMasked?: string;
+  driverFirstName?: string; driverLastName?: string;
+  vehicleAssetId?: string; vin?: string;
+  currentOdometer?: number; previousOdometer?: number; distanceDriven?: number;
+  merchantName?: string; merchantAddress?: string; merchantCity?: string; merchantState?: string;
 };
 
 export default function Gas() {
@@ -45,12 +78,16 @@ export default function Gas() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [periodFilter, setPeriodFilter] = useState("all");
   const [driverFilter, setDriverFilter] = useState("all");
+  const [vehicleFilter, setVehicleFilter] = useState("all");
+  const [expandedDriverKey, setExpandedDriverKey] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<number | null>(null);
   const [endDate, setEndDate] = useState<number | null>(null);
 
   const { data: usage, isLoading } = trpc.gas.usage.useQuery();
-  const { data: imports } = trpc.gas.imports.useQuery();
+  const { data: importGroups } = trpc.gas.imports.useQuery();
   const { data: allDrivers } = trpc.drivers.list.useQuery();
+  const { data: allVehicles } = trpc.vehicles.list.useQuery();
+  const [expandedImportGroupKey, setExpandedImportGroupKey] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
   const deleteImportMutation = trpc.gas.deleteImport.useMutation({
@@ -70,13 +107,17 @@ export default function Gas() {
     onError: (err) => toast.error(err.message),
   });
 
-  const periods = useMemo(() => Array.from(new Set((imports ?? []).map(i => i.periodLabel))), [imports]);
+  // Distinct period labels, sourced from usage records directly rather than
+  // the now-grouped imports list, so this stays simple regardless of how
+  // imports are organized for display.
+  const periods = useMemo(() => Array.from(new Set((usage ?? []).map(u => u.periodLabel))), [usage]);
 
   const filteredUsage = useMemo(() => {
     if (!usage) return [];
     return usage.filter(u => {
       if (periodFilter !== "all" && u.periodLabel !== periodFilter) return false;
       if (driverFilter !== "all" && String(u.driverId) !== driverFilter) return false;
+      if (vehicleFilter !== "all" && String(u.vehicleId) !== vehicleFilter) return false;
       if (startDate != null || endDate != null) {
         // Only transaction-level imports have a real date to filter by —
         // older monthly-summary rows are excluded rather than silently
@@ -261,6 +302,16 @@ export default function Gas() {
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <Label className="text-xs">Vehicle:</Label>
+          <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Vehicles</SelectItem>
+              {allVehicles?.map(v => <SelectItem key={v.id} value={String(v.id)}>Van {v.vanNumber}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
         {(startDate || endDate) && (
           <Button variant="ghost" size="sm" onClick={() => { setStartDate(null); setEndDate(null); }}>
             Clear Dates
@@ -297,60 +348,119 @@ export default function Gas() {
             <p className="text-sm text-muted-foreground text-center py-8">No gas usage imported yet.</p>
           ) : (
             <div className="space-y-1">
-              {byDriver.map(d => (
-                <div key={d.key} className="flex items-center justify-between text-sm py-2.5 border-b last:border-0 flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    {d.driverId == null ? (
-                      <>
-                        <Badge variant="outline" className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30">Unassigned</Badge>
-                        <span className="text-muted-foreground">Prompt ID {d.driverPromptId}</span>
-                      </>
-                    ) : (
-                      <span className="font-medium">{d.driverName}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-xs text-muted-foreground">{d.transactions} txns · {d.totalFuelUnits.toFixed(1)} gal</span>
-                    <span className="font-semibold w-20 text-right">${d.totalAmount.toFixed(2)}</span>
+              {byDriver.map(d => {
+                const isExpanded = expandedDriverKey === d.key;
+                const transactions = filteredUsage.filter(u =>
+                  d.driverId != null ? u.driverId === d.driverId : u.driverPromptId === d.driverPromptId && u.driverId == null
+                ).filter(u => u.transactionDate)
+                  .sort((a, b) => new Date(a.transactionDate!).getTime() - new Date(b.transactionDate!).getTime());
+                return (
+                  <div key={d.key} className="border-b last:border-0">
+                    <button
+                      className="w-full flex items-center justify-between text-sm py-2.5 flex-wrap gap-2 text-left"
+                      onClick={() => setExpandedDriverKey(isExpanded ? null : d.key)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {d.driverId == null ? (
+                          <>
+                            <Badge variant="outline" className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30">Unassigned</Badge>
+                            <span className="text-muted-foreground">Prompt ID {d.driverPromptId}</span>
+                          </>
+                        ) : (
+                          <span className="font-medium">{d.driverName}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-xs text-muted-foreground">{d.transactions} txns · {d.totalFuelUnits.toFixed(1)} gal</span>
+                        <span className="font-semibold w-20 text-right">${d.totalAmount.toFixed(2)}</span>
+                        {transactions.length > 0 && (isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />)}
+                      </div>
+                    </button>
                     {isAdmin && d.driverId == null && (
-                      <AssignDriverSelect recordId={d.recordIds[0]} onAssign={(driverId) => assignMutation.mutate({ recordId: d.recordIds[0], driverId })} />
+                      <div className="pb-2">
+                        <AssignDriverSelect recordId={d.recordIds[0]} onAssign={(driverId) => assignMutation.mutate({ recordId: d.recordIds[0], driverId })} />
+                      </div>
+                    )}
+                    {isExpanded && transactions.length > 0 && (
+                      <div className="pb-3 space-y-1.5">
+                        {transactions.map(t => (
+                          <div key={t.id} className="text-xs bg-muted/30 rounded-md px-3 py-2 flex items-center justify-between flex-wrap gap-1">
+                            <span>
+                              {new Date(t.transactionDate!).toLocaleDateString()} {new Date(t.transactionDate!).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                              {t.vehicleVanNumber ? ` · Van ${t.vehicleVanNumber}` : t.vehicleAssetId ? ` · ${t.vehicleAssetId}` : ""}
+                              {t.merchantAddress ? ` · ${t.merchantAddress}` : ""}
+                              {t.currentOdometer != null ? ` · Odometer: ${t.currentOdometer.toLocaleString()} mi` : ""}
+                              {t.distanceDriven != null ? ` · ${t.distanceDriven} mi since last fill-up` : ""}
+                            </span>
+                            <span className="font-medium">{t.totalFuelUnits ? `${t.totalFuelUnits.toFixed(1)} gal · ` : ""}${t.totalAmount.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {imports && imports.length > 0 && (
+      {importGroups && importGroups.length > 0 && (
         <Card>
           <CardHeader><CardTitle className="text-base">Import History</CardTitle></CardHeader>
           <CardContent className="space-y-1">
-            {imports.map(imp => (
-              <div key={imp.id} className="flex items-center justify-between text-sm py-2 border-b last:border-0">
-                <div>
-                  <p className="font-medium">{imp.periodLabel}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {imp.driverCount} driver{imp.driverCount === 1 ? "" : "s"}
-                    {imp.unmatchedCount > 0 && <span className="text-yellow-500"> · {imp.unmatchedCount} unmatched</span>}
-                    {" · "}${imp.totalSpend.toFixed(2)} · {new Date(imp.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                {isAdmin && (
-                  <Button
-                    variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => {
-                      if (window.confirm(`Remove the "${imp.periodLabel}" import? This can't be undone.`)) {
-                        deleteImportMutation.mutate({ id: imp.id });
-                      }
-                    }}
+            {importGroups.map(group => {
+              const isExpanded = expandedImportGroupKey === group.key;
+              const groupTotal = group.imports.reduce((sum, imp) => sum + imp.totalSpend, 0);
+              return (
+                <div key={group.key} className="border-b last:border-0">
+                  <button
+                    className="w-full flex items-center justify-between text-sm py-2.5 text-left"
+                    onClick={() => setExpandedImportGroupKey(isExpanded ? null : group.key)}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
-            ))}
+                    <div className="flex items-center gap-2">
+                      {group.driverId == null && (
+                        <Badge variant="outline" className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30">Unassigned</Badge>
+                      )}
+                      <span className="font-medium">{group.driverName}</span>
+                      <span className="text-xs text-muted-foreground">{group.imports.length} import{group.imports.length === 1 ? "" : "s"}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground">${groupTotal.toFixed(2)} total</span>
+                      {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <div className="pb-2 space-y-1">
+                      {group.imports.map(imp => (
+                        <div key={imp.id} className="flex items-center justify-between text-xs bg-muted/30 rounded-md px-3 py-2 ml-2">
+                          <div>
+                            <p className="font-medium">{imp.periodLabel}</p>
+                            <p className="text-muted-foreground">
+                              {imp.driverCount} record{imp.driverCount === 1 ? "" : "s"}
+                              {imp.unmatchedCount > 0 && <span className="text-yellow-500"> · {imp.unmatchedCount} unmatched</span>}
+                              {" · "}${imp.totalSpend.toFixed(2)} · uploaded {new Date(imp.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          {isAdmin && (
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => {
+                                if (window.confirm(`Remove the "${imp.periodLabel}" import? This can't be undone.`)) {
+                                  deleteImportMutation.mutate({ id: imp.id });
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}
@@ -375,7 +485,7 @@ function AssignDriverSelect({ recordId, onAssign }: { recordId: number; onAssign
 
 function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [step, setStep] = useState<"upload" | "review">("upload");
-  const [periodLabel, setPeriodLabel] = useState("");
+  const [periodMonth, setPeriodMonth] = useState(""); // "YYYY-MM" from <input type="month">
   const [fileName, setFileName] = useState("");
   const [preview, setPreview] = useState<(ParsedRow & { driverId: number | null; driverName: string | null })[]>([]);
   const [assignments, setAssignments] = useState<Record<string, number>>({});
@@ -401,7 +511,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
   });
 
   const reset = () => {
-    setStep("upload"); setPeriodLabel(""); setFileName(""); setPreview([]); setAssignments({});
+    setStep("upload"); setPeriodMonth(""); setFileName(""); setPreview([]); setAssignments({});
   };
 
   const handleFile = (file: File) => {
@@ -433,7 +543,19 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
           const costCol = findColumn(headers, ["Total Fuel Cost", "Total Amount"]);
           const unitsCol = findColumn(headers, ["Units"]);
           const unitCostCol = findColumn(headers, ["Unit Cost"]);
-          const odometerCol = findColumn(headers, ["Current Odometer", "Odometer"]);
+          const transIdCol = findColumn(headers, ["Trans ID", "Transaction ID"]);
+          const cardCol = findColumn(headers, ["Card Number"]);
+          const currentOdoCol = findColumn(headers, ["Current Odometer", "Odometer"]);
+          const previousOdoCol = findColumn(headers, ["Previous Odometer"]);
+          const distanceCol = findColumn(headers, ["Distance Driven"]);
+          const assetIdCol = findColumn(headers, ["Custom Vehicle/Asset ID", "Custom Vehicle", "Asset ID"]);
+          const vinCol = findColumn(headers, ["VIN"]);
+          const merchantNameCol = findColumn(headers, ["Merchant Name"]);
+          const merchantAddrCol = findColumn(headers, ["Merchant Address"]);
+          const merchantCityCol = findColumn(headers, ["Merchant City"]);
+          const merchantStateCol = findColumn(headers, ["Merchant State / Province", "Merchant State"]);
+          const firstNameCol = findColumn(headers, ["Driver First Name"]);
+          const lastNameCol = findColumn(headers, ["Driver Last Name"]);
 
           if (!costCol) {
             toast.error("Found dates but couldn't find a Total Fuel Cost / Total Amount column.");
@@ -443,8 +565,10 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
           rows = json.map(row => {
             const dateVal = row[dateCol];
             const timeVal = timeCol ? row[timeCol] : "";
-            const parsedDate = dateVal instanceof Date ? dateVal : new Date(`${dateVal} ${timeVal}`.trim());
-            const odometerRaw = odometerCol ? Number(row[odometerCol]) : NaN;
+            const parsedDate = combineDateAndTime(dateVal, timeVal);
+            const currentOdo = currentOdoCol ? Number(row[currentOdoCol]) : NaN;
+            const previousOdo = previousOdoCol ? Number(row[previousOdoCol]) : NaN;
+            const distance = distanceCol ? Number(row[distanceCol]) : NaN;
             return {
               driverPromptId: String(row[promptIdCol]).trim(),
               numberOfTransactions: 1,
@@ -452,7 +576,19 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
               totalFuelUnits: unitsCol ? Number(row[unitsCol]) || undefined : undefined,
               avgFuelUnitPrice: unitCostCol ? Number(row[unitCostCol]) || undefined : undefined,
               transactionDate: !isNaN(parsedDate.getTime()) ? parsedDate.getTime() : undefined,
-              odometer: !isNaN(odometerRaw) && odometerRaw > 0 ? odometerRaw : undefined,
+              transactionId: transIdCol ? String(row[transIdCol]) || undefined : undefined,
+              cardNumberMasked: cardCol ? String(row[cardCol]) || undefined : undefined,
+              currentOdometer: !isNaN(currentOdo) && currentOdo > 0 ? currentOdo : undefined,
+              previousOdometer: !isNaN(previousOdo) && previousOdo > 0 ? previousOdo : undefined,
+              distanceDriven: !isNaN(distance) ? distance : undefined,
+              vehicleAssetId: assetIdCol ? String(row[assetIdCol]) || undefined : undefined,
+              vin: vinCol ? String(row[vinCol]) || undefined : undefined,
+              merchantName: merchantNameCol ? String(row[merchantNameCol]) || undefined : undefined,
+              merchantAddress: merchantAddrCol ? String(row[merchantAddrCol]) || undefined : undefined,
+              merchantCity: merchantCityCol ? String(row[merchantCityCol]) || undefined : undefined,
+              merchantState: merchantStateCol ? String(row[merchantStateCol]) || undefined : undefined,
+              driverFirstName: firstNameCol ? String(row[firstNameCol]) || undefined : undefined,
+              driverLastName: lastNameCol ? String(row[lastNameCol]) || undefined : undefined,
             };
           }).filter(r => r.driverPromptId);
         } else {
@@ -498,10 +634,14 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
   const unmatchedRows = preview.filter(r => r.driverId == null);
 
   const handleConfirm = () => {
-    if (!periodLabel.trim()) { toast.error("Enter a period label, e.g. \"July 2026\""); return; }
+    if (!periodMonth) { toast.error("Select which month this data is for"); return; }
+    const [year, month] = periodMonth.split("-").map(Number);
+    const periodStart = new Date(year, month - 1, 1).getTime();
+    const periodEnd = new Date(year, month, 0, 23, 59, 59, 999).getTime(); // last instant of the last day of the month
     const rows = preview.map(r => ({
       driverPromptId: r.driverPromptId,
       driverId: r.driverId ?? assignments[r.driverPromptId] ?? null,
+      vehicleId: r.vehicleId ?? null,
       numberOfTransactions: r.numberOfTransactions,
       totalAmount: r.totalAmount,
       avgAmount: r.avgAmount,
@@ -512,9 +652,21 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       totalNonFuelAmount: r.totalNonFuelAmount,
       totalTransactionFeeAmount: r.totalTransactionFeeAmount,
       transactionDate: r.transactionDate,
-      odometer: r.odometer,
+      transactionId: r.transactionId,
+      cardNumberMasked: r.cardNumberMasked,
+      driverFirstName: r.driverFirstName,
+      driverLastName: r.driverLastName,
+      vehicleAssetId: r.vehicleAssetId,
+      vin: r.vin,
+      currentOdometer: r.currentOdometer,
+      previousOdometer: r.previousOdometer,
+      distanceDriven: r.distanceDriven,
+      merchantName: r.merchantName,
+      merchantAddress: r.merchantAddress,
+      merchantCity: r.merchantCity,
+      merchantState: r.merchantState,
     }));
-    confirmMutation.mutate({ periodLabel: periodLabel.trim(), fileName, rows });
+    confirmMutation.mutate({ periodStart, periodEnd, fileName, rows });
   };
 
   return (
@@ -528,11 +680,22 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
               Upload the "Summary by Driver Prompt ID" report from your fuel card provider's portal (CSV or Excel).
             </p>
             <div>
-              <Label className="text-xs">Period Label *</Label>
-              <Input value={periodLabel} onChange={(e) => setPeriodLabel(e.target.value)} placeholder="e.g. July 2026" />
+              <Label className="text-xs">Month *</Label>
+              <Input
+                type="month"
+                value={periodMonth}
+                onChange={(e) => setPeriodMonth(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Uploading a single week? Just pick the month it falls in — individual fill-up dates are always visible when you expand a driver's entry below.
+              </p>
             </div>
             <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-            <Button variant="outline" onClick={() => { if (!periodLabel.trim()) { toast.error("Enter a period label first"); return; } fileInputRef.current?.click(); }} disabled={previewMutation.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => { if (!periodMonth) { toast.error("Select a month first"); return; } fileInputRef.current?.click(); }}
+              disabled={previewMutation.isPending}
+            >
               <Upload className="h-4 w-4 mr-2" /> {previewMutation.isPending ? "Reading..." : "Choose File"}
             </Button>
           </div>
@@ -548,24 +711,33 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
 
             <div className="space-y-1.5 max-h-80 overflow-y-auto">
               {preview.map((r, i) => (
-                <div key={i} className="flex items-center justify-between text-xs bg-muted/30 rounded-md px-3 py-2">
-                  <div>
-                    {r.driverId != null ? (
-                      <span className="font-medium">{r.driverName}</span>
-                    ) : assignments[r.driverPromptId] ? (
-                      <span className="font-medium">{drivers?.find(d => d.id === assignments[r.driverPromptId])?.name} <span className="text-muted-foreground">(assigned)</span></span>
-                    ) : (
-                      <span className="text-yellow-600">Prompt ID {r.driverPromptId} — not matched</span>
+                <div key={i} className="text-xs bg-muted/30 rounded-md px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {r.driverId != null ? (
+                        <span className="font-medium">{r.driverName}</span>
+                      ) : assignments[r.driverPromptId] ? (
+                        <span className="font-medium">{drivers?.find(d => d.id === assignments[r.driverPromptId])?.name} <span className="text-muted-foreground">(assigned)</span></span>
+                      ) : (
+                        <span className="text-yellow-600">Prompt ID {r.driverPromptId} — not matched</span>
+                      )}
+                      <span className="text-muted-foreground ml-2">{r.numberOfTransactions} txns · ${r.totalAmount.toFixed(2)}</span>
+                      {r.vehicleId != null && <span className="text-muted-foreground ml-2">· Van {r.vehicleVanNumber}</span>}
+                      {r.distanceDriven != null && <span className="text-muted-foreground ml-2">· {r.distanceDriven} mi</span>}
+                    </div>
+                    {r.driverId == null && !assignments[r.driverPromptId] && (
+                      <Select onValueChange={(v) => setAssignments({ ...assignments, [r.driverPromptId]: parseInt(v, 10) })}>
+                        <SelectTrigger className="h-7 w-[150px] text-xs"><SelectValue placeholder="Assign..." /></SelectTrigger>
+                        <SelectContent>
+                          {drivers?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                     )}
-                    <span className="text-muted-foreground ml-2">{r.numberOfTransactions} txns · ${r.totalAmount.toFixed(2)}</span>
                   </div>
-                  {r.driverId == null && !assignments[r.driverPromptId] && (
-                    <Select onValueChange={(v) => setAssignments({ ...assignments, [r.driverPromptId]: parseInt(v, 10) })}>
-                      <SelectTrigger className="h-7 w-[150px] text-xs"><SelectValue placeholder="Assign..." /></SelectTrigger>
-                      <SelectContent>
-                        {drivers?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                  {r.odometerFlag && (
+                    <p className="text-yellow-600 flex items-center gap-1 mt-1">
+                      <AlertTriangle className="h-3 w-3 shrink-0" /> {r.odometerFlag}
+                    </p>
                   )}
                 </div>
               ))}
