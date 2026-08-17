@@ -2001,6 +2001,21 @@ const normalizeForMatch = (s: string | null | undefined) => {
   return v;
 };
 
+// Some E-ZPass statements report a plate WITH a 2-letter state prefix
+// baked in (e.g. "NY1234ABC"), others don't. Rather than requiring the
+// vehicle's own License Plate field to be edited to match whichever
+// format a given statement happens to use, this returns both the
+// as-stored value and a state-prefix-stripped version, so matching works
+// regardless of which side (or neither) has the prefix.
+function plateMatchKeys(s: string | null | undefined): string[] {
+  const base = normalizeForMatch(s);
+  if (!base) return [];
+  const keys = [base];
+  const stateStripped = base.match(/^[A-Z]{2}([0-9A-Z]{3,})$/);
+  if (stateStripped) keys.push(stateStripped[1]);
+  return keys;
+}
+
 export async function createTollTransactionsBulk(
   organizationId: number,
   importId: number | null,
@@ -2012,14 +2027,27 @@ export async function createTollTransactionsBulk(
 
   const vehicles = await getVehicles(organizationId);
   const byTag = new Map(vehicles.filter(v => v.ezpassTag).map(v => [normalizeForMatch(v.ezpassTag), v]));
-  const byPlate = new Map(vehicles.filter(v => v.licensePlate).map(v => [normalizeForMatch(v.licensePlate), v]));
+  const byPlate = new Map<string, typeof vehicles[number]>();
+  for (const v of vehicles) {
+    if (!v.licensePlate) continue;
+    for (const key of plateMatchKeys(v.licensePlate)) byPlate.set(key, v);
+  }
 
   let matchedCount = 0;
   const withVehicle = rows.map(r => {
-    const key = normalizeForMatch(r.tagOrPlate);
+    const tagKey = normalizeForMatch(r.tagOrPlate);
     // E-ZPass's export doesn't say whether this value is the tag or the
-    // plate — it's tried against both, since either can identify the vehicle.
-    const vehicle = (key ? byTag.get(key) : undefined) ?? (key ? byPlate.get(key) : undefined);
+    // plate — it's tried against both, since either can identify the
+    // vehicle. On the plate side, both the as-reported and
+    // state-prefix-stripped forms are tried, since statements aren't
+    // consistent about including a state prefix.
+    let vehicle = tagKey ? byTag.get(tagKey) : undefined;
+    if (!vehicle) {
+      for (const key of plateMatchKeys(r.tagOrPlate)) {
+        vehicle = byPlate.get(key);
+        if (vehicle) break;
+      }
+    }
     if (vehicle) matchedCount++;
     return { ...r, organizationId, importId, vehicleId: vehicle?.id ?? null };
   });
@@ -2094,12 +2122,22 @@ export async function rematchUnmatchedTollTransactions(organizationId: number) {
 
   const vehicles = await getVehicles(organizationId);
   const byTag = new Map(vehicles.filter(v => v.ezpassTag).map(v => [normalizeForMatch(v.ezpassTag), v]));
-  const byPlate = new Map(vehicles.filter(v => v.licensePlate).map(v => [normalizeForMatch(v.licensePlate), v]));
+  const byPlate = new Map<string, typeof vehicles[number]>();
+  for (const v of vehicles) {
+    if (!v.licensePlate) continue;
+    for (const key of plateMatchKeys(v.licensePlate)) byPlate.set(key, v);
+  }
 
   let rematchedCount = 0;
   for (const txn of unmatched) {
-    const key = normalizeForMatch(txn.tagOrPlate);
-    const vehicle = (key ? byTag.get(key) : undefined) ?? (key ? byPlate.get(key) : undefined);
+    const tagKey = normalizeForMatch(txn.tagOrPlate);
+    let vehicle = tagKey ? byTag.get(tagKey) : undefined;
+    if (!vehicle) {
+      for (const key of plateMatchKeys(txn.tagOrPlate)) {
+        vehicle = byPlate.get(key);
+        if (vehicle) break;
+      }
+    }
     if (vehicle) {
       await db.update(tollTransactions).set({ vehicleId: vehicle.id }).where(eq(tollTransactions.id, txn.id));
       rematchedCount++;
