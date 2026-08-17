@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
+import * as XLSX from "xlsx";
 import { trpc } from "@/lib/trpc";
 import { useIsAdmin } from "@/_core/hooks/useIsAdmin";
 import { toDateInputValue, fromDateInputValue } from "@/lib/utils";
@@ -18,7 +19,7 @@ import {
   Tabs, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
 import {
-  Siren, Plus, RefreshCw, ExternalLink, Upload, Trash2, DollarSign, AlertTriangle,
+  Siren, Plus, RefreshCw, ExternalLink, Upload, Trash2, DollarSign, AlertTriangle, FileSpreadsheet, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,6 +35,8 @@ const STRIKE_FINES = [50, 100, 150, 200, 250]; // MTA's progressive schedule, ca
 export default function Violations() {
   const { isAdmin } = useIsAdmin();
   const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [vehicleFilter, setVehicleFilter] = useState("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const { data: violationsList, isLoading } = trpc.violations.list.useQuery();
@@ -62,9 +65,102 @@ export default function Violations() {
     onError: (err) => toast.error(err.message),
   });
 
-  const filtered = (violationsList ?? []).filter(v => statusFilter === "all" || v.status === statusFilter);
+  // Populated from whatever violation types actually appear in the data —
+  // stays accurate automatically as new types show up from future syncs,
+  // rather than a hardcoded list that can go stale.
+  const typeOptions = useMemo(() => {
+    const types = new Set((violationsList ?? []).map(v => v.violationType).filter((t): t is string => Boolean(t)));
+    return Array.from(types).sort();
+  }, [violationsList]);
+
+  const filtered = (violationsList ?? []).filter(v =>
+    (statusFilter === "all" || v.status === statusFilter) &&
+    (typeFilter === "all" || v.violationType === typeFilter) &&
+    (vehicleFilter === "all" || String(v.vehicleId) === vehicleFilter)
+  );
   const totalDue = (violationsList ?? []).reduce((sum, v) => sum + (v.amountDue ?? 0), 0);
   const openCount = (violationsList ?? []).filter(v => v.status === "open").length;
+
+  const filteredTotal = filtered.reduce((sum, v) => sum + (v.amountDue ?? v.fineAmount ?? 0), 0);
+  const filteredFinesTotal = filtered.reduce((sum, v) => sum + (v.fineAmount ?? 0), 0);
+  const isFiltered = typeFilter !== "all" || vehicleFilter !== "all" || statusFilter !== "all";
+
+  const filterLabel = () => {
+    const parts = [];
+    if (vehicleFilter !== "all") parts.push(`Van ${vehicles?.find(v => String(v.id) === vehicleFilter)?.vanNumber ?? ""}`);
+    if (typeFilter !== "all") parts.push(typeFilter);
+    if (statusFilter !== "all") parts.push(STATUS_STYLES[statusFilter]?.label ?? statusFilter);
+    return parts.length ? parts.join(" · ") : "All Violations";
+  };
+
+  const exportExcel = () => {
+    if (filtered.length === 0) { toast.error("Nothing to export for the current filters"); return; }
+    const rows = filtered.map(v => ({
+      Date: new Date(v.issueDate).toLocaleDateString(),
+      Vehicle: v.vanNumber ? `Van ${v.vanNumber}` : v.plateNumber,
+      Plate: v.plateNumber,
+      "Violation Type": v.violationType ?? "",
+      Agency: v.issuingAgency ?? "",
+      "Summons #": v.summonsNumber ?? "",
+      Strike: v.strikeNumber ?? "",
+      Status: STATUS_STYLES[v.status]?.label ?? v.status,
+      "Fine Amount": v.fineAmount ?? 0,
+      "Amount Due": v.amountDue ?? v.fineAmount ?? 0,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [{ wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 22 }, { wch: 14 }, { wch: 8 }, { wch: 15 }, { wch: 12 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Violations");
+    XLSX.writeFile(wb, `violations_${filterLabel().replace(/[^a-z0-9]+/gi, "-")}.xlsx`);
+  };
+
+  const exportPdf = () => {
+    if (filtered.length === 0) { toast.error("Nothing to export for the current filters"); return; }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) { toast.error("Please allow pop-ups to print this report"); return; }
+
+    const rows = filtered.map(v => `
+      <tr>
+        <td>${new Date(v.issueDate).toLocaleDateString()}</td>
+        <td>${v.vanNumber ? `Van ${v.vanNumber}` : v.plateNumber}</td>
+        <td>${v.violationType ?? "—"}</td>
+        <td>${v.summonsNumber ?? "—"}</td>
+        <td>${v.strikeNumber ?? "—"}</td>
+        <td>${STATUS_STYLES[v.status]?.label ?? v.status}</td>
+        <td style="text-align:right">$${(v.fineAmount ?? 0).toFixed(2)}</td>
+        <td style="text-align:right">$${(v.amountDue ?? v.fineAmount ?? 0).toFixed(2)}</td>
+      </tr>
+    `).join("");
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Violations Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 32px; color: #111; }
+            h1 { font-size: 20px; margin-bottom: 2px; }
+            p.subtitle { color: #666; font-size: 12px; margin-top: 0; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ddd; padding: 7px 9px; }
+            th { background: #1F2937; color: #fff; text-align: left; }
+            tfoot td { font-weight: bold; background: #f3f4f6; }
+          </style>
+        </head>
+        <body>
+          <h1>Violations Report</h1>
+          <p class="subtitle">${filterLabel()} · ${filtered.length} violation${filtered.length === 1 ? "" : "s"} · Generated ${new Date().toLocaleDateString()}</p>
+          <table>
+            <thead><tr><th>Date</th><th>Vehicle</th><th>Type</th><th>Summons #</th><th>Strike</th><th>Status</th><th style="text-align:right">Fine</th><th style="text-align:right">Amount Due</th></tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot><tr><td colspan="6">Total</td><td style="text-align:right">$${filteredFinesTotal.toFixed(2)}</td><td style="text-align:right">$${filteredTotal.toFixed(2)}</td></tr></tfoot>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
 
   // Warn about any plate that's about to hit (or already at) the $250 cap
   // on its next bus-lane violation.
@@ -86,7 +182,13 @@ export default function Violations() {
           <p className="text-muted-foreground text-sm mt-1">Bus lane, camera, and parking tickets — synced automatically from NYC's public records where possible</p>
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={exportExcel}>
+              <FileSpreadsheet className="h-4 w-4 mr-1" /> Export Excel
+            </Button>
+            <Button size="sm" variant="outline" onClick={exportPdf}>
+              <FileText className="h-4 w-4 mr-1" /> Export PDF
+            </Button>
             <Button size="sm" variant="outline" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
               <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} /> {syncMutation.isPending ? "Syncing..." : "Sync Now"}
             </Button>
@@ -127,6 +229,39 @@ export default function Violations() {
           <TabsTrigger value="finalized">Finalized</TabsTrigger>
         </TabsList>
       </Tabs>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <Label className="text-xs">Violation Type</Label>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[240px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              {typeOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Vehicle</Label>
+          <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Vehicles</SelectItem>
+              {vehicles?.map(v => <SelectItem key={v.id} value={String(v.id)}>Van {v.vanNumber}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        {isFiltered && (
+          <>
+            <Button variant="ghost" size="sm" onClick={() => { setStatusFilter("all"); setTypeFilter("all"); setVehicleFilter("all"); }}>
+              Clear Filters
+            </Button>
+            <p className="text-sm text-muted-foreground ml-auto">
+              {filtered.length} violation{filtered.length === 1 ? "" : "s"} · <span className="font-semibold text-foreground">${filteredTotal.toFixed(2)} due</span> of ${filteredFinesTotal.toFixed(2)} total fined
+            </p>
+          </>
+        )}
+      </div>
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground text-center py-12">Loading...</p>
