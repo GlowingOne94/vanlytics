@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerAuthRoutes } from "../auth";
 import { registerStripeWebhook } from "./stripeWebhook";
 import { registerMobileApi } from "../mobileApi";
+import { syncAllOrganizations } from "../violationsSync";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -65,6 +66,19 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  // Daily NYC violations sync — a short delay after startup lets the DB
+  // connection settle first, then repeats every 24 hours. A single
+  // long-running Node process with setInterval is enough here; if this
+  // ever needs to run across multiple server instances, it should move to
+  // a proper scheduled job instead so it doesn't run once per instance.
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  setTimeout(() => {
+    syncAllOrganizations().catch(err => console.error("[violations sync] Initial run failed:", err));
+    setInterval(() => {
+      syncAllOrganizations().catch(err => console.error("[violations sync] Scheduled run failed:", err));
+    }, ONE_DAY_MS);
+  }, 30_000);
 }
 
 startServer().catch(console.error);

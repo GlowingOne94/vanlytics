@@ -859,3 +859,50 @@ export const gasUsageRecords = mysqlTable("gas_usage_records", {
 export type GasUsageRecord = typeof gasUsageRecords.$inferSelect;
 export type InsertGasUsageRecord = typeof gasUsageRecords.$inferInsert;
 
+/* ============================================================
+ * VIOLATIONS (bus lane / camera / parking tickets)
+ * ============================================================
+ * Populated two ways: automatically via a daily sync against NYC Open
+ * Data's public "Open Parking and Camera Violations" dataset (matched by
+ * plate), or manually for anything outside NYC's system. summonsNumber is
+ * the natural dedupe key for synced records — NYC re-sends the same
+ * summons on every sync until it's resolved, so re-syncing must update
+ * the existing row rather than create a duplicate.
+ */
+export const violations = mysqlTable("violations", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull(),
+  vehicleId: int("vehicleId"),
+  plateNumber: varchar("plateNumber", { length: 20 }).notNull(),
+  plateState: varchar("plateState", { length: 5 }),
+  summonsNumber: varchar("summonsNumber", { length: 30 }),
+  violationType: varchar("violationType", { length: 150 }),
+  issuingAgency: varchar("issuingAgency", { length: 150 }),
+  issueDate: timestamp("issueDate").notNull(),
+  fineAmount: decimal("fineAmount", { precision: 10, scale: 2 }),
+  penaltyAmount: decimal("penaltyAmount", { precision: 10, scale: 2 }),
+  interestAmount: decimal("interestAmount", { precision: 10, scale: 2 }),
+  reductionAmount: decimal("reductionAmount", { precision: 10, scale: 2 }),
+  paymentAmount: decimal("paymentAmount", { precision: 10, scale: 2 }),
+  amountDue: decimal("amountDue", { precision: 10, scale: 2 }),
+  // Which numbered bus-lane strike this is for this plate (1st, 2nd,
+  // 3rd...) — only meaningful for bus-lane-type violations, computed at
+  // sync/creation time from that plate's prior bus-lane violation count.
+  strikeNumber: int("strikeNumber"),
+  // The ticket image NYC hosts for this summons, when available — means
+  // manual document upload usually isn't needed for synced violations.
+  summonsImageUrl: text("summonsImageUrl"),
+  documentUrl: text("documentUrl"),
+  documentKey: varchar("documentKey", { length: 255 }),
+  status: mysqlEnum("status", ["open", "disputed", "pending_payment", "finalized"]).default("open").notNull(),
+  source: mysqlEnum("source", ["auto_sync", "manual"]).default("manual").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("violations_org_idx").on(table.organizationId),
+]);
+
+export type Violation = typeof violations.$inferSelect;
+export type InsertViolation = typeof violations.$inferInsert;
+

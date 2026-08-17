@@ -7,6 +7,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
+import { syncOrganizationViolations } from "./violationsSync";
 import { generateToken, hashToken, generateOrgCode } from "./_core/tokens";
 import { sendInviteEmail, sendServiceInquiryEmail, sendContactFormEmail } from "./_core/email";
 import { stripe, priceIdForPlan, PlanTier, PLAN_VEHICLE_LIMITS, PLAN_ADMIN_LIMITS, PLAN_COMPANY_LIMITS, migrationIncludedForTier, planMeetsMinimum, extraVehiclePriceId, intervalAvailableForTier } from "./_core/stripe";
@@ -1726,6 +1727,59 @@ Based on this fleet data, provide helpful, specific advice about fleet health, r
   // sends a notification email; no payment or account changes happen here.
   // ============ PARTS INVENTORY ============
   // ============ GAS AUDIT ============
+  // ============ VIOLATIONS ============
+  violations: router({
+    list: orgProcedure.query(async ({ ctx }) => {
+      return db.getViolations(ctx.organizationId);
+    }),
+    create: adminProcedure
+      .input(z.object({
+        vehicleId: z.number().optional(),
+        plateNumber: z.string().min(1),
+        plateState: z.string().optional(),
+        violationType: z.string().optional(),
+        issuingAgency: z.string().optional(),
+        issueDate: z.number(),
+        fineAmount: z.number().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return db.createViolation(ctx.organizationId, input);
+      }),
+    updateStatus: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(["open", "disputed", "pending_payment", "finalized"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateViolationStatus(ctx.organizationId, input.id, input.status);
+        return { success: true } as const;
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await db.deleteViolation(ctx.organizationId, input.id);
+        return { success: true } as const;
+      }),
+    uploadDocument: adminProcedure
+      .input(z.object({
+        violationId: z.number(),
+        fileName: z.string(),
+        fileBase64: z.string(),
+        contentType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `violations/${ctx.organizationId}/${input.violationId}-${input.fileName}`;
+        const { url, key: fileKey } = await storagePut(key, buffer, input.contentType);
+        await db.attachViolationDocument(ctx.organizationId, input.violationId, url, fileKey);
+        return { url } as const;
+      }),
+    syncNow: adminProcedure.mutation(async ({ ctx }) => {
+      return syncOrganizationViolations(ctx.organizationId);
+    }),
+  }),
+
   gas: router({
     usage: orgProcedure.query(async ({ ctx }) => {
       return db.getGasUsage(ctx.organizationId);

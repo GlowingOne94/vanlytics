@@ -6,6 +6,9 @@ export const ENV = {
   appUrl: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, ""),
   // Transactional email (password reset, invites) via Resend.
   resendApiKey: process.env.RESEND_API_KEY ?? "",
+  // Optional — NYC Open Data works without one for light use, but a free
+  // app token raises the rate limit. Get one at data.cityofnewyork.us.
+  nycOpenDataAppToken: process.env.NYC_OPEN_DATA_APP_TOKEN ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "Vanlytics <onboarding@resend.dev>",
   serviceInquiryNotifyEmail: process.env.SERVICE_INQUIRY_NOTIFY_EMAIL ?? "",
   // Stripe billing — leave keys blank until a Stripe account is set up;

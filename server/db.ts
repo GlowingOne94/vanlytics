@@ -29,6 +29,7 @@ import {
   tollTransactions, TollTransaction, InsertTollTransaction,
   parts, Part, InsertPart,
   gasImports, GasImport, InsertGasImport,
+  violations, Violation, InsertViolation,
   gasUsageRecords, GasUsageRecord, InsertGasUsageRecord,
   partInvoices, PartInvoice, InsertPartInvoice,
   partInvoiceDocuments, PartInvoiceDocument, InsertPartInvoiceDocument,
@@ -85,6 +86,13 @@ export async function getOrganizationById(id: number) {
   if (!db) return undefined;
   const result = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
   return result[0];
+}
+
+export async function getAllOrganizationIds(): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ id: organizations.id }).from(organizations);
+  return rows.map(r => r.id);
 }
 
 export async function updateOrganizationSettings(
@@ -2709,4 +2717,162 @@ export async function assignGasUsageDriver(organizationId: number, recordId: num
   await updateDriver(organizationId, driverId, { gasCardPromptId: record.driverPromptId });
   await db.update(gasUsageRecords).set({ driverId })
     .where(and(eq(gasUsageRecords.driverPromptId, record.driverPromptId), eq(gasUsageRecords.organizationId, organizationId)));
+}
+
+// ============ VIOLATIONS ============
+
+export async function getViolations(organizationId: number) {
+  const dbConn = await getDb();
+  if (!dbConn) return [];
+  const rows = await dbConn.select().from(violations).where(eq(violations.organizationId, organizationId)).orderBy(desc(violations.issueDate));
+  const allVehicles = await getVehicles(organizationId);
+
+  return rows.map(r => ({
+    id: r.id,
+    vehicleId: r.vehicleId,
+    vanNumber: allVehicles.find(v => v.id === r.vehicleId)?.vanNumber ?? null,
+    plateNumber: r.plateNumber,
+    plateState: r.plateState,
+    summonsNumber: r.summonsNumber,
+    violationType: r.violationType,
+    issuingAgency: r.issuingAgency,
+    issueDate: r.issueDate,
+    fineAmount: r.fineAmount != null ? parseFloat(r.fineAmount) : null,
+    penaltyAmount: r.penaltyAmount != null ? parseFloat(r.penaltyAmount) : null,
+    interestAmount: r.interestAmount != null ? parseFloat(r.interestAmount) : null,
+    reductionAmount: r.reductionAmount != null ? parseFloat(r.reductionAmount) : null,
+    paymentAmount: r.paymentAmount != null ? parseFloat(r.paymentAmount) : null,
+    amountDue: r.amountDue != null ? parseFloat(r.amountDue) : null,
+    strikeNumber: r.strikeNumber,
+    summonsImageUrl: r.summonsImageUrl,
+    documentUrl: r.documentUrl,
+    status: r.status,
+    source: r.source,
+    notes: r.notes,
+    createdAt: r.createdAt,
+  }));
+}
+
+export async function createViolation(organizationId: number, data: {
+  vehicleId?: number; plateNumber: string; plateState?: string;
+  violationType?: string; issuingAgency?: string; issueDate: number;
+  fineAmount?: number; notes?: string;
+}) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+
+  const strikeNumber = data.violationType && isBusLaneType(data.violationType)
+    ? await getNextStrikeNumber(organizationId, data.plateNumber)
+    : undefined;
+
+  const result = await dbConn.insert(violations).values({
+    organizationId,
+    vehicleId: data.vehicleId,
+    plateNumber: data.plateNumber.toUpperCase(),
+    plateState: data.plateState ?? "NY",
+    violationType: data.violationType,
+    issuingAgency: data.issuingAgency,
+    issueDate: new Date(data.issueDate),
+    fineAmount: data.fineAmount != null ? String(data.fineAmount) : undefined,
+    amountDue: data.fineAmount != null ? String(data.fineAmount) : undefined,
+    strikeNumber,
+    status: "open",
+    source: "manual",
+    notes: data.notes,
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateViolationStatus(organizationId: number, id: number, status: "open" | "disputed" | "pending_payment" | "finalized") {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+  await dbConn.update(violations).set({ status }).where(and(eq(violations.id, id), eq(violations.organizationId, organizationId)));
+}
+
+export async function deleteViolation(organizationId: number, id: number) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+  await dbConn.delete(violations).where(and(eq(violations.id, id), eq(violations.organizationId, organizationId)));
+}
+
+export async function attachViolationDocument(organizationId: number, id: number, documentUrl: string, documentKey: string) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+  await dbConn.update(violations).set({ documentUrl, documentKey }).where(and(eq(violations.id, id), eq(violations.organizationId, organizationId)));
+}
+
+function isBusLaneType(violationType: string): boolean {
+  const t = violationType.toUpperCase();
+  return t.includes("BUS LANE") || t.includes("BUS STOP") || t.includes("DOUBLE PARK");
+}
+
+async function getNextStrikeNumber(organizationId: number, plateNumber: string): Promise<number> {
+  const dbConn = await getDb();
+  if (!dbConn) return 1;
+  const rows = await dbConn.select().from(violations).where(and(
+    eq(violations.organizationId, organizationId),
+    eq(violations.plateNumber, plateNumber.toUpperCase()),
+  ));
+  const busLaneCount = rows.filter(r => r.violationType && isBusLaneType(r.violationType)).length;
+  return busLaneCount + 1;
+}
+
+// Called by the sync job for each violation NYC returns for a plate.
+// Upserts by summonsNumber so re-syncing updates status/payment instead
+// of creating a duplicate row every time it runs.
+export async function upsertSyncedViolation(organizationId: number, data: {
+  vehicleId: number; plateNumber: string; plateState: string; summonsNumber: string;
+  violationType: string | null; issuingAgency: string | null; issueDate: number;
+  fineAmount?: number; penaltyAmount?: number; interestAmount?: number; reductionAmount?: number;
+  paymentAmount?: number; amountDue?: number; summonsImageUrl?: string; isBusLaneType: boolean;
+}) {
+  const dbConn = await getDb();
+  if (!dbConn) throw new Error("Database not available");
+
+  const [existing] = await dbConn.select().from(violations).where(and(
+    eq(violations.organizationId, organizationId),
+    eq(violations.summonsNumber, data.summonsNumber),
+  ));
+
+  // A synced violation is "resolved" once nothing is owed — reflect that
+  // as finalized automatically, but never downgrade a status the person
+  // set themselves (e.g. don't silently flip "disputed" back to "open").
+  const inferredStatus: "open" | "finalized" = data.amountDue != null && data.amountDue <= 0 ? "finalized" : "open";
+
+  if (existing) {
+    await dbConn.update(violations).set({
+      fineAmount: data.fineAmount != null ? String(data.fineAmount) : undefined,
+      penaltyAmount: data.penaltyAmount != null ? String(data.penaltyAmount) : undefined,
+      interestAmount: data.interestAmount != null ? String(data.interestAmount) : undefined,
+      reductionAmount: data.reductionAmount != null ? String(data.reductionAmount) : undefined,
+      paymentAmount: data.paymentAmount != null ? String(data.paymentAmount) : undefined,
+      amountDue: data.amountDue != null ? String(data.amountDue) : undefined,
+      summonsImageUrl: data.summonsImageUrl,
+      status: existing.status === "open" ? inferredStatus : existing.status,
+    }).where(eq(violations.id, existing.id));
+    return;
+  }
+
+  const strikeNumber = data.isBusLaneType ? await getNextStrikeNumber(organizationId, data.plateNumber) : undefined;
+
+  await dbConn.insert(violations).values({
+    organizationId,
+    vehicleId: data.vehicleId,
+    plateNumber: data.plateNumber.toUpperCase(),
+    plateState: data.plateState,
+    summonsNumber: data.summonsNumber,
+    violationType: data.violationType,
+    issuingAgency: data.issuingAgency,
+    issueDate: new Date(data.issueDate),
+    fineAmount: data.fineAmount != null ? String(data.fineAmount) : undefined,
+    penaltyAmount: data.penaltyAmount != null ? String(data.penaltyAmount) : undefined,
+    interestAmount: data.interestAmount != null ? String(data.interestAmount) : undefined,
+    reductionAmount: data.reductionAmount != null ? String(data.reductionAmount) : undefined,
+    paymentAmount: data.paymentAmount != null ? String(data.paymentAmount) : undefined,
+    amountDue: data.amountDue != null ? String(data.amountDue) : undefined,
+    strikeNumber,
+    summonsImageUrl: data.summonsImageUrl,
+    status: inferredStatus,
+    source: "auto_sync",
+  });
 }
